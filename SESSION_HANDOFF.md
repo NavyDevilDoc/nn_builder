@@ -36,6 +36,10 @@ npm run dev
 **Documentation updated:**
 - `PROGRESS.md` — Chapter 3 fully written with design rationale and bug notes
 - `IMPLEMENTATION_PLAN.md` — added Phase 5 steps 22–23, renumbered Phase 6 (steps 24–27), added Phase 7 (custom datasets, steps 28–31), added `input_shape` stripping to Key Decisions
+- `README.md` — rewritten to cover both Streamlit prototype and React rebuild; full feature list, project structure, and roadmap
+- `.gitignore` + `.gitattributes` — added; `data/`, `node_modules/`, `frontend/dist/` excluded; LF line endings enforced
+
+**Repository:** https://github.com/NavyDevilDoc/nn_builder (initial commit, 64 files, public)
 
 ---
 
