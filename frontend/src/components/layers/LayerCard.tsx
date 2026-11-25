@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Trash2 } from "lucide-react";
+import { AlertTriangle, GripVertical, Trash2 } from "lucide-react";
 import type { Activation, LayerConfig } from "../../types/config";
 import { useBuilderStore } from "../../store/useBuilderStore";
 import { LayerTypeSelect } from "./LayerTypeSelect";
@@ -36,7 +36,7 @@ function NumberInput({
       onChange={(e) => onChange(Number(e.target.value))}
       className="
         w-20 bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5
-        text-sm text-zinc-100 text-right
+        text-sm text-zinc-100 text-left
         focus:outline-none focus:ring-1 focus:ring-zinc-500
       "
     />
@@ -101,10 +101,16 @@ function Row({ children }: { children: React.ReactNode }) {
 
 function ShapeBadge({ shape }: { shape: number[] | null | undefined }) {
   if (shape === undefined) return null;
-  const text = shape === null ? "?" : `[${shape.join(" × ")}]`;
+  if (shape === null) {
+    return (
+      <span className="ml-auto text-red-500 select-none flex items-center">
+        <AlertTriangle size={13} />
+      </span>
+    );
+  }
   return (
     <span className="ml-auto text-xs font-mono text-zinc-500 select-none">
-      {text}
+      [{shape.join(" × ")}]
     </span>
   );
 }
@@ -251,10 +257,11 @@ export function LayerCard({ layer, shape }: Props) {
     <div
       ref={setNodeRef}
       style={style}
-      className="
+      className={`
         bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-3
         flex flex-col gap-2.5 select-none
-      "
+        ${shape === null ? "border-l-2 border-l-red-600" : ""}
+      `}
     >
       {/* Header row */}
       <div className="flex items-center gap-2">

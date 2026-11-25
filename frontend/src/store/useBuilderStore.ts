@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   BuilderConfig,
   EpochEvent,
@@ -58,15 +59,25 @@ interface BuilderStore {
   training:    TrainingState;
   results:     ResultsState;
 
+  // UI-only toggles (not part of BuilderConfig schema)
+  weightDecayEnabled: boolean;
+  fixedSeed:          boolean;
+  setWeightDecayEnabled: (v: boolean) => void;
+  setFixedSeed:          (v: boolean) => void;
+
   // Build a backend-ready BuilderConfig (strips layer ids)
   getConfig: () => BuilderConfig;
 
   // Layer actions
-  addLayer:      (type: LayerType) => void;
-  removeLayer:   (id: string) => void;
-  updateLayer:   (id: string, patch: Partial<LayerConfig>) => void;
-  setLayerType:  (id: string, type: LayerType) => void;
-  reorderLayers: (layers: LayerConfig[]) => void;
+  addLayer:         (type: LayerType) => void;
+  insertLayerBefore:(beforeId: string, type: LayerType) => void;
+  removeLayer:      (id: string) => void;
+  updateLayer:      (id: string, patch: Partial<LayerConfig>) => void;
+  setLayerType:     (id: string, type: LayerType) => void;
+  reorderLayers:    (layers: LayerConfig[]) => void;
+
+  // Config bulk load (import)
+  loadConfig: (layers: LayerConfig[], hyperparams: Omit<BuilderConfig, "hidden_layers">) => void;
 
   // Hyperparameter actions
   updateHyperparams: (patch: Partial<Omit<BuilderConfig, "hidden_layers">>) => void;
@@ -84,9 +95,15 @@ interface BuilderStore {
 
 // ── Store implementation ──────────────────────────────────────────────────────
 
-export const useBuilderStore = create<BuilderStore>((set, get) => ({
+export const useBuilderStore = create<BuilderStore>()(
+  persist(
+    (set, get) => ({
   layers:      [],
   hyperparams: DEFAULT_HYPERPARAMS,
+  weightDecayEnabled: false,   // weight_decay=0.0 by default → off
+  fixedSeed:          true,    // seed=42 by default → on
+  setWeightDecayEnabled: (v) => set({ weightDecayEnabled: v }),
+  setFixedSeed:          (v) => set({ fixedSeed: v }),
   training: {
     active:     false,
     sessionId:  null,
@@ -99,9 +116,10 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
   },
 
   getConfig: () => {
-    const { layers, hyperparams } = get();
+    const { layers, hyperparams, weightDecayEnabled } = get();
     return {
       ...hyperparams,
+      weight_decay: weightDecayEnabled ? hyperparams.weight_decay : 0.0,
       hidden_layers: layers.map(({ id: _id, ...rest }) => rest),
     };
   },
@@ -115,6 +133,16 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
         { id: crypto.randomUUID(), type, ...LAYER_DEFAULTS[type] } as LayerConfig,
       ],
     })),
+
+  insertLayerBefore: (beforeId, type) =>
+    set((s) => {
+      const idx = s.layers.findIndex((l) => l.id === beforeId);
+      if (idx === -1) return s;
+      const newLayer = { id: crypto.randomUUID(), type, ...LAYER_DEFAULTS[type] } as LayerConfig;
+      const layers = [...s.layers];
+      layers.splice(idx, 0, newLayer);
+      return { layers };
+    }),
 
   removeLayer: (id) =>
     set((s) => ({ layers: s.layers.filter((l) => l.id !== id) })),
@@ -135,6 +163,14 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
     })),
 
   reorderLayers: (layers) => set({ layers }),
+
+  loadConfig: (layers, hyperparams) =>
+    set({
+      layers,
+      hyperparams,
+      training: { active: false, sessionId: null, epochsDone: 0, history: { train_loss: [], val_loss: [], train_acc: [], val_acc: [] } },
+      results:  { confusionMatrix: null, decisionBoundary: null },
+    }),
 
   // ── Hyperparameter actions ──────────────────────────────────────────────────
 
@@ -178,4 +214,15 @@ export const useBuilderStore = create<BuilderStore>((set, get) => ({
 
   setConfusionMatrix:  (image) => set((s) => ({ results: { ...s.results, confusionMatrix: image } })),
   setDecisionBoundary: (image) => set((s) => ({ results: { ...s.results, decisionBoundary: image } })),
-}));
+    }),
+    {
+      name: "nn-builder-store",
+      partialize: (state) => ({
+        layers:             state.layers,
+        hyperparams:        state.hyperparams,
+        weightDecayEnabled: state.weightDecayEnabled,
+        fixedSeed:          state.fixedSeed,
+      }),
+    }
+  )
+);

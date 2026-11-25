@@ -139,9 +139,37 @@ Phase 2 built the entire interactive frontend in one session. The component tree
 
 **Fix**: both `backend/routes/train.py` and `backend/routes/validate.py` now check whether any CNN layer types (`Conv2d`, `MaxPool2d`, `Flatten`) are present. If not, `input_shape` is stripped from the config before it reaches `build_model()` and `train_model()`, so both treat the data as flat tabular with `input_dim=784`. CNN pipelines are unaffected.
 
+### Phase 5 Additions — Polish (2026-11-25)
+
+A full polish pass completed all Phase 5 items (except comparison mode, which was dropped from scope):
+
+**localStorage persistence** (`useBuilderStore.ts`): Zustand `persist` middleware with `partialize` — only `layers` and `hyperparams` are written to localStorage; `training` and `results` start fresh each load. Uses the curried `create<T>()()` form required for Zustand v4 middleware.
+
+**Block-level mismatch indicators** (`LayerCard.tsx`): When a layer's incoming shape is `null`, the card gains a red left border (`border-l-2 border-l-red-600`) and the shape badge switches from `?` text to a red `<AlertTriangle>` icon from lucide-react.
+
+**Insert layer between existing layers** (`LayerBuilder.tsx`): `InsertDivider` component renders between each card — a 1px line with a centered `+` button. Clicking opens an inline type picker (same styling as the bottom add buttons). Selecting a type calls `insertLayerBefore(beforeId, type)` in the store (a splice at the found index) and closes. Uses `Fragment` (not a wrapper `div`) so dnd-kit's collision detection sees only the `LayerCard` DOM nodes as registered sortable items.
+
+**Independent column scrolling** (`App.tsx`): Changed outer container from `min-h-screen` to `h-screen overflow-hidden`. With a fixed viewport height, `flex-1` on the grid actually constrains both columns, allowing each `overflow-y-auto` column to scroll independently.
+
+**Dataset image thumbnails** (`App.tsx`, `client.ts`): `fetchDatasetSample(name)` added to the API client. `DatasetSelector` runs a TanStack Query with `enabled: !!meta?.input_shape` — fires only for image datasets, cached with `staleTime: Infinity`. Renders a 128×128 thumbnail below the dataset description.
+
+**Dark/light mode toggle** (`App.tsx`): `Sun`/`Moon` icon button in the header. State initialized from `document.documentElement.classList.contains("dark")` to stay in sync with the `index.html` default. Toggles the `dark` class directly on `<html>` — no React re-render of the whole tree.
+
+**JSON config export / import** (`App.tsx`, `useBuilderStore.ts`): `Download`/`Upload` icon buttons in the header. Export serializes `{ layers, hyperparams }` via `useBuilderStore.getState()` (snapshot at click time, no subscription). Import reads a `.json` file, validates structure, then calls `loadConfig` which also resets `training` and `results`. A hidden `<input type="file">` is triggered via `useRef`.
+
+**Hyperparameter opt-in toggles** (`HyperparamPanel.tsx`, `useBuilderStore.ts`): Two new persisted booleans — `weightDecayEnabled` (default off, since default weight_decay is 0.0) and `fixedSeed` (default on). Weight decay: when off, `getConfig()` sends `weight_decay: 0.0` regardless of the stored value, so toggling back on restores the last entry. Seed: when off, `TrainingPanel` injects `Math.floor(Math.random() * 2**31)` at the moment Train is clicked — each run gets a fresh seed without affecting the code viewer.
+
+**Arch diagram UX fixes** (`ArchDiagram.tsx`): Fixed height `h-72` (was dynamic, grew unboundedly with layer count). `zoomOnScroll={false}` — scroll wheel passes through to the page; pinch-to-zoom still works on the canvas.
+
+**Number input alignment**: `text-right` → `text-left` in both `LayerCard.tsx` and `HyperparamPanel.tsx` number inputs, moving values away from the browser's spinner arrows.
+
+### Phase 8 Planned — Graph Mode
+
+Designed a Path A graph mode (Steps 32–38 in `IMPLEMENTATION_PLAN.md`): sequential backend and all existing endpoints stay untouched; a parallel React Flow canvas and `/api/graph/*` endpoints handle non-sequential architectures (ResNet, Inception, U-Net). Key insight: `nn.Sequential` is a special case of a DAG, so the graph backend can handle both — but keeping them separate avoids any risk to the working sequential pipeline.
+
 ### What's next
 
-- **localStorage persistence**: config survives page reload
-- **Dataset image thumbnails**: sample grid for MNIST/CIFAR/Fashion-MNIST shown below the dataset selector
-- **Sequential datasets**: sine wave, ECG, or similar — required to demonstrate LSTM/GRU meaningfully (seq_len=1 is architecturally valid but pedagogically degenerate)
-- **Training run comparison**: overlay two runs on the loss chart
+- **Phase 6, Step 25**: Sequential datasets — sine wave (regression warmup), multi-frequency superposition, and one real-world series. Required to demonstrate LSTM/GRU meaningfully; seq_len=1 is architecturally valid but pedagogically degenerate.
+- **Phase 6, Steps 26–27**: `compute_shapes()` for multi-step sequential shapes; `code_gen.py` for LSTMWrapper/GRUWrapper.
+- **Phase 7**: Custom dataset upload (CSV tabular, .npz sequential).
+- **Phase 8**: Graph mode node editor.

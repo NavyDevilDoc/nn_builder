@@ -386,12 +386,12 @@ RNN layers on current 9 datasets use `seq_len=1` — they compile and train but 
 
 | Step | Deliverable | Done when |
 |---|---|---|
-| 18 | Save/load config to localStorage via Zustand `persist` middleware | Reload page → dataset, layers, and hyperparams restore exactly |
-| 19 | Dataset image thumbnails (MNIST/CIFAR sample grid) | Thumbnail shown below dataset selector for image datasets |
-| 20 | Dark/light mode toggle | Theme switches without layout shift |
-| 21 | Comparison mode: overlay two training runs on the loss chart | Select run A and B from history → both curves visible |
-| 22 | Block-level mismatch indicators on `LayerCard` | Card with null incoming shape gets red left border + warning icon next to shape badge; clearer than the banner-only approach |
-| 23 | JSON config export / import | "Export" downloads `nn_builder_config.json`; "Import" restores layers + hyperparams from file; pairs with custom dataset upload |
+| 18 | ✅ Save/load config to localStorage via Zustand `persist` middleware | Reload page → dataset, layers, and hyperparams restore exactly |
+| 19 | ✅ Dataset image thumbnails (MNIST/CIFAR sample grid) | Thumbnail shown below dataset selector for image datasets |
+| 20 | ✅ Dark/light mode toggle | Theme switches without layout shift |
+| 21 | ~~Comparison mode: overlay two training runs on the loss chart~~ | *Dropped from scope* |
+| 22 | ✅ Block-level mismatch indicators on `LayerCard` | Card with null incoming shape gets red left border + warning icon next to shape badge; clearer than the banner-only approach |
+| 23 | ✅ JSON config export / import | "Export" downloads `nn_builder_config.json`; "Import" restores layers + hyperparams from file; pairs with custom dataset upload |
 
 ### Phase 6 — RNN Support
 
@@ -410,6 +410,29 @@ RNN layers on current 9 datasets use `seq_len=1` — they compile and train but 
 | 29 | Frontend upload UI — file picker + preview (row count, feature count, class distribution); error messages for malformed files | User can upload, inspect, and select a custom dataset without leaving the page |
 | 30 | Custom dataset persistence — uploaded datasets stored server-side per session (same session store pattern); cleared on backend restart | Custom dataset survives a Train → Visualize → Code round-trip within a session |
 | 31 | Sequence data upload — `.npz` file with `X: (N, seq_len, features)` and `y: (N,)` arrays; registered alongside built-in sequential datasets | Custom time-series data trains through LSTM/GRU |
+
+### Phase 8 — Graph Mode (Non-Sequential Architectures)
+
+Path A: sequential backend and all existing endpoints are untouched. Graph mode adds a parallel frontend canvas and new `/api/graph/*` endpoints. Simple mode and Graph mode coexist; switching Simple→Graph migrates the current layer list to an equivalent linear graph.
+
+**Why this unlocks ResNet, Inception, U-Net:** `nn.Sequential` enforces a linear chain. Skip connections, multi-branch paths, and merge operations (Add, Concat) require a DAG. The graph backend does a topological sort and builds a custom `nn.Module` with an explicit `forward()` — functionally identical to `nn.Sequential` for linear graphs, but capable of arbitrary acyclic topologies.
+
+#### Frontend
+
+| Step | Deliverable | Done when |
+|---|---|---|
+| 32 | `GraphNode` / `GraphEdge` TypeScript types; `useGraphStore.ts` (separate Zustand store, sequential store untouched) | Types compile; store initializes with an empty canvas |
+| 33 | `GraphCanvas.tsx` — interactive React Flow canvas; node palette to drag layer types onto canvas; output handle → input handle edge drawing | User can place a Conv2d node and draw an edge to a Linear node |
+| 34 | Custom node components: `LayerNode` (embedded config controls matching current layer cards), `MergeNode` (`Add` for skip connections, `Concat` for channel concatenation), fixed `InputNode` / `OutputNode` | All node types render with correct controls; MergeNode shows two input handles |
+| 35 | Mode toggle (Simple ↔ Graph) in left panel header; Simple→Graph migration converts `layers[]` to a linear graph | Switching modes preserves the current architecture as a linear graph; switching back is a no-op if the graph is still linear |
+
+#### Backend
+
+| Step | Deliverable | Done when |
+|---|---|---|
+| 36 | `GraphConfig` Pydantic schema (nodes + edges); `POST /api/graph/validate` with topological sort and shape inference on arbitrary DAGs | A ResNet-style skip graph validates correctly; shapes propagate through merge nodes |
+| 37 | `backend/core/graph_builder.py`: topological sort → custom `nn.Module` with dynamic `forward()`; `POST /api/graph/train` SSE (same asyncio.Queue pattern as sequential) | A ResNet-style network trains to convergence on CIFAR-10 |
+| 38 | `GET /api/graph/code`: emit a complete standalone `nn.Module` class with explicit `forward()` | Generated code is copy-paste runnable and shows users exactly how skip connections work in PyTorch |
 
 ---
 

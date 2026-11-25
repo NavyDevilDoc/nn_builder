@@ -196,13 +196,8 @@ export function ArchDiagram() {
     );
   }
 
-  const diagramH = Math.max(360, (layers.length + 2) * (NODE_H + GAP));
-
   return (
-    <div
-      className="rounded-lg border border-zinc-800 overflow-hidden"
-      style={{ height: diagramH }}
-    >
+    <div className="rounded-lg border border-zinc-800 overflow-hidden h-72">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -213,7 +208,8 @@ export function ArchDiagram() {
         nodesConnectable={false}
         elementsSelectable={false}
         panOnDrag={true}
-        zoomOnScroll={true}
+        zoomOnScroll={false}
+        zoomOnPinch={true}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#27272a" variant={BackgroundVariant.Dots} gap={20} size={1} />

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, Fragment } from "react";
 import {
   DndContext,
   closestCenter,
@@ -13,7 +13,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useBuilderStore } from "../../store/useBuilderStore";
 import { fetchDatasets, validateConfig } from "../../api/client";
 import { LayerCard } from "./LayerCard";
@@ -29,6 +29,60 @@ const TYPE_LABEL: Record<LayerType, string> = {
   LSTM:     "LSTM",
   GRU:      "GRU",
 };
+
+// ── Insert divider ────────────────────────────────────────────────────────────
+
+function InsertDivider({ beforeId }: { beforeId: string }) {
+  const [open, setOpen] = useState(false);
+  const insertLayerBefore = useBuilderStore((s) => s.insertLayerBefore);
+
+  function insert(type: LayerType) {
+    insertLayerBefore(beforeId, type);
+    setOpen(false);
+  }
+
+  if (!open) {
+    return (
+      <div
+        className="flex items-center gap-2 py-1 group/ins cursor-pointer"
+        onClick={() => setOpen(true)}
+        role="button"
+        aria-label="Insert layer here"
+      >
+        <div className="flex-1 h-px bg-zinc-800 group-hover/ins:bg-zinc-600 transition-colors" />
+        <Plus size={11} className="text-zinc-700 group-hover/ins:text-zinc-400 transition-colors flex-shrink-0" />
+        <div className="flex-1 h-px bg-zinc-800 group-hover/ins:bg-zinc-600 transition-colors" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 my-0.5 bg-zinc-900/80 border border-dashed border-zinc-700 rounded">
+      {ADD_TYPES.map((t) => (
+        <button
+          key={t}
+          onClick={() => insert(t)}
+          className="
+            flex items-center gap-1 px-2 py-0.5 rounded
+            bg-zinc-800 hover:bg-zinc-700 border border-zinc-700
+            text-xs text-zinc-300 transition-colors
+          "
+        >
+          {TYPE_LABEL[t]}
+        </button>
+      ))}
+      <button
+        onClick={() => setOpen(false)}
+        className="ml-auto text-zinc-600 hover:text-zinc-400 transition-colors"
+        aria-label="Cancel"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+}
+
+// ── LayerBuilder ──────────────────────────────────────────────────────────────
 
 export function LayerBuilder() {
   const layers        = useBuilderStore((s) => s.layers);
@@ -84,9 +138,14 @@ export function LayerBuilder() {
       {/* Sortable layer list */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-          {layers.map((layer, i) => (
-            <LayerCard key={layer.id} layer={layer} shape={shapeFor(i)} />
-          ))}
+          <div className="flex flex-col">
+            {layers.map((layer, i) => (
+              <Fragment key={layer.id}>
+                <InsertDivider beforeId={layer.id} />
+                <LayerCard layer={layer} shape={shapeFor(i)} />
+              </Fragment>
+            ))}
+          </div>
         </SortableContext>
       </DndContext>
 

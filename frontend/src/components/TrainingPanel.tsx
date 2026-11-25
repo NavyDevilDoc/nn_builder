@@ -21,6 +21,7 @@ export function TrainingPanel() {
   const training      = useBuilderStore((s) => s.training);
   const hyperparams   = useBuilderStore((s) => s.hyperparams);
   const layers        = useBuilderStore((s) => s.layers);
+  const fixedSeed     = useBuilderStore((s) => s.fixedSeed);
   const getConfig     = useBuilderStore((s) => s.getConfig);
   const startTraining  = useBuilderStore((s) => s.startTraining);
   const setSessionId   = useBuilderStore((s) => s.setSessionId);
@@ -55,7 +56,8 @@ export function TrainingPanel() {
     startTraining("pending");
 
     try {
-      const config = getConfig();
+      const base   = getConfig();
+      const config = fixedSeed ? base : { ...base, seed: Math.floor(Math.random() * 2 ** 31) };
       for await (const event of streamTraining(config, abort.signal)) {
         if (event.type === "epoch") {
           pushEpoch(event as EpochEvent);

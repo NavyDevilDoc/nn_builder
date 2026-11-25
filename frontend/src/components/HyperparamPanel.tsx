@@ -37,7 +37,7 @@ function Num({
       onChange={(e) => onChange(Number(e.target.value))}
       className="
         w-24 bg-zinc-800 border border-zinc-700 rounded px-2 py-1
-        text-sm text-zinc-100 text-right
+        text-sm text-zinc-100 text-left
         focus:outline-none focus:ring-1 focus:ring-zinc-500
       "
     />
@@ -97,8 +97,12 @@ function Sel<T extends string>({
 // ── HyperparamPanel ───────────────────────────────────────────────────────────
 
 export function HyperparamPanel() {
-  const hyperparams      = useBuilderStore((s) => s.hyperparams);
-  const updateHyperparams = useBuilderStore((s) => s.updateHyperparams);
+  const hyperparams          = useBuilderStore((s) => s.hyperparams);
+  const updateHyperparams    = useBuilderStore((s) => s.updateHyperparams);
+  const weightDecayEnabled   = useBuilderStore((s) => s.weightDecayEnabled);
+  const fixedSeed            = useBuilderStore((s) => s.fixedSeed);
+  const setWeightDecayEnabled = useBuilderStore((s) => s.setWeightDecayEnabled);
+  const setFixedSeed          = useBuilderStore((s) => s.setFixedSeed);
 
   const set = <K extends keyof Hyperparams>(key: K, val: Hyperparams[K]) =>
     updateHyperparams({ [key]: val } as Partial<Hyperparams>);
@@ -149,16 +153,22 @@ export function HyperparamPanel() {
       </FieldRow>
 
       <FieldRow label="Weight decay">
-        <Num
-          value={hyperparams.weight_decay}
-          min={0}
-          step={0.0001}
-          onChange={(n) => set("weight_decay", n)}
-        />
+        <Check checked={weightDecayEnabled} onChange={setWeightDecayEnabled} label="Enabled" />
+        {weightDecayEnabled && (
+          <Num
+            value={hyperparams.weight_decay || 0.0001}
+            min={0}
+            step={0.0001}
+            onChange={(n) => set("weight_decay", n)}
+          />
+        )}
       </FieldRow>
 
       <FieldRow label="Seed">
-        <Num value={hyperparams.seed} min={0} onChange={(n) => set("seed", n)} />
+        <Check checked={fixedSeed} onChange={setFixedSeed} label="Fixed" />
+        {fixedSeed && (
+          <Num value={hyperparams.seed} min={0} onChange={(n) => set("seed", n)} />
+        )}
       </FieldRow>
 
       <FieldRow label="Early stopping">

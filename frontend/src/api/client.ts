@@ -27,6 +27,12 @@ export async function fetchDatasets(): Promise<DatasetsResponse> {
   return res.json();
 }
 
+export async function fetchDatasetSample(name: string): Promise<{ image: string }> {
+  const res = await fetch(`${API}/datasets/${encodeURIComponent(name)}/sample`);
+  if (!res.ok) throw new Error(`fetchDatasetSample failed: ${res.statusText}`);
+  return res.json();
+}
+
 // ── Validation ────────────────────────────────────────────────────────────────
 
 export async function validateConfig(
