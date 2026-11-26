@@ -199,5 +199,5 @@ React Flow's `fitView` prop fits only on mount, so layers added later fell outsi
 
 ### What's next
 
+- **Phase 8** (next, taken ahead of Phase 7 — no dependency between them): Graph mode node editor.
 - **Phase 7**: Custom dataset upload (CSV tabular, `.npz` sequential).
-- **Phase 8**: Graph mode node editor.
