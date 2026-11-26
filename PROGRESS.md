@@ -191,8 +191,13 @@ All three planned sequential datasets turned out to be next-value forecasting �
 
 **Verification**: a 10-config harness (sequential, tabular, stacked, bidirectional, `num_layers=2`, per-timestep BN, MLP baseline, CNN+RNN rejection) checks predicted shapes against real activations layer by layer, loads `build_model`'s weights into the generated `Network` and asserts bit-identical outputs (`torch.equal`), and trains each config. All pass; also driven end-to-end in the browser.
 
+### Arch diagram sizing fix (2026-11-25)
+
+React Flow's `fitView` prop fits only on mount, so layers added later fell outside the fixed `h-72` frame. A first fix (re-run `fitView` on node-count change) exposed two more problems: `fitView()` silently returns `false` until every node is measured by its ResizeObserver (which reports *after* the next animation frame), and even when it worked, fitting a vertical stack into 288 px made nodes unreadable chips by ~5 layers.
+
+**Final design** (`ArchDiagram.tsx`): node gap 80 → 40 px; the panel grows with layer count from 288 px to a 576 px cap; the viewport is **computed directly** (`viewportFor()`) from the known fixed node sizes via `setViewport` — no measurement wait. Zoom is clamped to [0.5, 1]; when a deep stack overflows at the floor it top-aligns so the input stays visible. Re-fit is keyed on `totalH` (layer count only), so a user's pan survives unit-count edits. Verified at 1/3/6/8/10/11 layers.
+
 ### What's next
 
-- **Arch diagram**: React Flow `fitView` runs only on mount, so nodes added later fall outside the frame (pre-existing).
 - **Phase 7**: Custom dataset upload (CSV tabular, `.npz` sequential).
 - **Phase 8**: Graph mode node editor.

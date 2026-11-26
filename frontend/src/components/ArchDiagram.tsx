@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import ReactFlow, {
   Background,
   BackgroundVariant,
   type Node,
   type Edge,
+  type ReactFlowInstance,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { useBuilderStore } from "../store/useBuilderStore";
@@ -40,7 +41,37 @@ function shapeLabel(shape: number[] | null | undefined): string {
 
 const NODE_W = 130;
 const NODE_H = 56;
-const GAP    = 80;
+const GAP    = 40;   // room for the edge shape label, nothing more
+
+// ── Viewport sizing ───────────────────────────────────────────────────────────
+// The panel grows with the network so labels stay readable, within a cap so a
+// deep network can't push the rest of the column off-screen. Every node has a
+// fixed size, so the content bounds are known exactly and the viewport is
+// computed directly — no waiting on React Flow's ResizeObserver measurements.
+
+const PANEL_MIN_H = 288;   // h-72 — compact for small networks
+const PANEL_MAX_H = 576;   // 36rem cap
+const FIT_PAD     = 0.15;  // fraction of content size kept as margin
+const MAX_ZOOM    = 1;     // never magnify past natural size
+const MIN_ZOOM    = 0.5;   // readability floor; below it, show the top and let the user pan
+const TOP_MARGIN  = 16;    // px above the input node when the stack overflows
+
+function panelHeight(contentH: number): number {
+  return Math.round(Math.min(PANEL_MAX_H, Math.max(PANEL_MIN_H, contentH * (1 + FIT_PAD))));
+}
+
+function viewportFor(contentH: number, panelW: number, panelH: number) {
+  const zoom = Math.max(
+    MIN_ZOOM,
+    Math.min(MAX_ZOOM, panelW / (NODE_W * (1 + FIT_PAD)), panelH / (contentH * (1 + FIT_PAD))),
+  );
+  const x = (panelW - NODE_W * zoom) / 2;
+  const scaledH = contentH * zoom;
+  // Fits → centre vertically. Overflows at the floor → top-align so the input
+  // (where reading starts) is visible, rather than centring on the middle.
+  const y = scaledH <= panelH ? (panelH - scaledH) / 2 : TOP_MARGIN;
+  return { x, y, zoom };
+}
 
 // ── Custom node ───────────────────────────────────────────────────────────────
 
@@ -103,7 +134,7 @@ export function ArchDiagram() {
     enabled: !!datasetsData && layers.length > 0,
   });
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes, edges, totalH } = useMemo(() => {
     const shapes = validation?.shapes ?? [];
     const centerX = NODE_W / 2;
     const totalItems = layers.length + 2; // input + hidden + output
@@ -189,6 +220,25 @@ export function ArchDiagram() {
     return { nodes, edges, totalH };
   }, [layers, validation]);
 
+  // Re-fit when the layer count changes — not on every `nodes` identity change,
+  // which happens on each validation response and would discard the user's
+  // pan/zoom while they edit unit counts. (React Flow's `fitView` prop only
+  // fits once, on mount.)
+  const panelH = panelHeight(totalH);
+  const rfRef = useRef<ReactFlowInstance | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  const fit = (rf: ReactFlowInstance | null, duration: number) => {
+    const panelW = boxRef.current?.clientWidth;
+    if (!rf || !panelW) return;
+    rf.setViewport(viewportFor(totalH, panelW, panelH), { duration });
+  };
+
+  // totalH depends only on the layer count, so this fires exactly on add/remove.
+  useEffect(() => {
+    fit(rfRef.current, 200);
+  }, [totalH]);
+
   if (layers.length === 0) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 h-48 flex items-center justify-center">
@@ -198,13 +248,17 @@ export function ArchDiagram() {
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800 overflow-hidden h-72">
+    <div
+      ref={boxRef}
+      className="rounded-lg border border-zinc-800 overflow-hidden transition-[height] duration-200"
+      style={{ height: panelH }}   // dynamic: grows with layer count, capped
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
+        onInit={(rf) => { rfRef.current = rf; fit(rf, 0); }}
+        minZoom={0.2}   // manual pinch may go below the auto-fit floor
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
