@@ -399,8 +399,8 @@ RNN layers on current 9 datasets use `seq_len=1` — they compile and train but 
 |---|---|---|
 | 24 | ✅ `LayerCard` variants for LSTM/GRU (hidden_size, num_layers, bidirectional, rnn_dropout) | LSTM/GRU cards render with correct controls |
 | 25 | ✅ Sequential datasets — at minimum: sine wave (regression warmup), multi-frequency superposition, and one real-world series (e.g., airline passengers). Loaders return `(N, seq_len, features)` arrays. `seq_len` added to `BuilderConfig`. | Sequential data loads, shapes validate, and an LSTM trains meaningfully |
-| 26 | `compute_shapes()` extended for multi-step sequential shapes | Shape annotations show `(seq_len, hidden_size)` for LSTM/GRU hidden states |
-| 27 | `code_gen.py` extended to emit `LSTMWrapper` / `GRUWrapper` | Generated code is complete and runnable for RNN configs |
+| 26 | ✅ `compute_shapes()` extended for multi-step sequential shapes | Shape annotations show `(seq_len, hidden_size)` for LSTM/GRU hidden states |
+| 27 | ✅ `code_gen.py` extended to emit `LSTMWrapper` / `GRUWrapper` | Generated code is complete and runnable for RNN configs |
 
 ### Phase 7 — Custom Datasets
 

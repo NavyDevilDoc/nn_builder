@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from backend.core.inputs import resolve_input
+from backend.core.rnn_plan import RNN_TYPES, first_error, plan_rnn
 from backend.core.shapes import compute_shapes
 from backend.models import ValidationRequest, ValidationResponse
 
@@ -46,8 +47,10 @@ async def validate(req: ValidationRequest) -> ValidationResponse:
     shapes = [list(s) if s is not None else None for s in raw_shapes]
     has_invalid = any(s is None for s in shapes)
 
-    return ValidationResponse(
-        valid=not has_invalid,
-        error=None if not has_invalid else "One or more layers produce an invalid shape.",
-        shapes=shapes,
-    )
+    error = None
+    if has_invalid:
+        # RNN configs know *why* a layer is invalid; others get the generic message
+        specific = first_error(plan_rnn(config)) if layer_types & RNN_TYPES else None
+        error = specific or "One or more layers produce an invalid shape."
+
+    return ValidationResponse(valid=not has_invalid, error=error, shapes=shapes)

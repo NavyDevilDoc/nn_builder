@@ -233,12 +233,29 @@ function RNNControls({ layer, update }: { layer: LayerConfig; update: (p: Partia
 
 // ── LayerCard ─────────────────────────────────────────────────────────────────
 
-interface Props {
-  layer: LayerConfig;
-  shape?: number[] | null;
+// What an RNN emits is inferred by the backend (full sequence iff another
+// RNN follows); surface it so the inference is never invisible.
+function RNNReturnNote({ outShape }: { outShape: number[] | null | undefined }) {
+  if (!outShape) return null;
+  const fullSequence = outShape.length === 2;
+  return (
+    <p className="text-xs text-zinc-500 select-none">
+      Returns{" "}
+      <span className="font-mono text-zinc-400">[{outShape.join(" × ")}]</span>
+      {fullSequence
+        ? " — full sequence (another LSTM/GRU follows)"
+        : " — final timestep only (last recurrent layer)"}
+    </p>
+  );
 }
 
-export function LayerCard({ layer, shape }: Props) {
+interface Props {
+  layer: LayerConfig;
+  shape?: number[] | null;      // shape entering this layer
+  outShape?: number[] | null;   // shape leaving this layer
+}
+
+export function LayerCard({ layer, shape, outShape }: Props) {
   const updateLayer  = useBuilderStore((s) => s.updateLayer);
   const removeLayer  = useBuilderStore((s) => s.removeLayer);
 
@@ -292,7 +309,12 @@ export function LayerCard({ layer, shape }: Props) {
       {layer.type === "Conv2d"    && <Conv2dControls    layer={layer} update={update} />}
       {layer.type === "MaxPool2d" && <MaxPool2dControls layer={layer} update={update} />}
       {layer.type === "Flatten"   && null}
-      {(layer.type === "LSTM" || layer.type === "GRU") && <RNNControls layer={layer} update={update} />}
+      {(layer.type === "LSTM" || layer.type === "GRU") && (
+        <>
+          <RNNControls layer={layer} update={update} />
+          <RNNReturnNote outShape={outShape} />
+        </>
+      )}
     </div>
   );
 }

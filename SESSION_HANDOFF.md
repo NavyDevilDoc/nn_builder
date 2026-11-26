@@ -5,41 +5,37 @@
 
 ## 1. Where we left off
 
-**Phase 6, Step 25 complete: sequential datasets + a `regression` task type, verified end-to-end in the browser.**
+**Phase 6 complete (Steps 25–27) on branch `phase6-sequential` — not yet merged to `master` or pushed.**
 
 ```
 # Backend — run from nn_builder/
 uv run uvicorn backend.main:app --reload --port 8000
 # Frontend — run from nn_builder/frontend/
 npm run dev
-# Confirm: select "sine" → "+ LSTM" → Train → stats read "train R² / val R²" ≈ 0.99;
-#          "Generate visualizations" → forecast-vs-actual plot.
+# Confirm: sine → + Linear, + LSTM, + LSTM, + Linear → cards read
+#   [20×1] → [20×16] → [20×32] → [16]; first LSTM says "Returns [20 × 32] — full sequence";
+#   Train → val R² ≈ 0.99; open Generated Code → LSTMWrapper(..., return_sequences=True/False).
 ```
 
-**What was built:**
-- `datasets/sequential.py` (sine, multi_sine, airline loaders + `make_windows`), `datasets/airline_passengers.csv`
-- `registry.load(name, seed, seq_len)` — windowing, chronological split, train-span normalization
-- `backend/core/inputs.py` — single source of truth for input layout, used by train / validate / code routes
-- Regression in `components/trainer.py`, `shapes.py`, `code_gen.py`, `visualizer.py` (`plot_predictions`); `POST /api/visualize/predictions`
-- Frontend: seq_len input in the dataset selector (resets on dataset change), task-aware R² labels (`src/lib/metrics.ts`), forecast plot, persist `merge` that deep-merges `hyperparams`
-- Fixed a pre-existing `tsc` error in `CodeViewer.tsx` (`npm run build` now passes)
+**What was built (Steps 26–27):**
+- `backend/core/rnn_plan.py` — `plan_rnn()`: per-layer shapes, inferred `return_sequences`, `_Unsqueeze` placement, error messages. Read by `compute_shapes`, `build_model`, and code gen.
+- `backend/core/trainer.py` — wrappers take `return_sequences`; `SeqBatchNorm1d`; bidirectional `_last_step` fix.
+- `backend/core/code_gen.py` — RNN code gen via `inspect.getsource`; `components/code_gen.py` gained `body`/`preamble` hooks and a sequential data section.
+- `LayerCard.tsx` — RNN cards state what was inferred; validation shows specific RNN errors.
 
 **Gotchas:**
-- **Laptop only:** `uv sync` needs `--native-tls` (TLS interception). Python/Node clients intermittently get `ECONNRESET` on loopback responses ≳70 KB — reproduced with a bare `http.server`, so it's environmental, not the app. It can make "Generate visualizations" fail through the Vite proxy; retrying works. curl is unaffected.
-- PowerShell 5.1 strips embedded `"` from arguments to native exes — put JSON for curl in a file and use `--data-binary @file`.
-- On sequential datasets the first layer must be LSTM/GRU (Linear-first shows as invalid shape).
+- **Laptop only:** `uv sync --native-tls`; Python/Node loopback responses ≳70 KB intermittently reset (environmental — retry).
+- PowerShell 5.1: `git commit -F <file>` for multi-line messages; JSON for curl goes in a file (`--data-binary @file`).
 
 ---
 
 ## 2. Where we're starting
 
-**Phase 6, Step 26: multi-step sequential shapes.**
+**Decide: merge `phase6-sequential` → `master` (and push), then Phase 7, Step 28: CSV tabular upload.**
 
-1. Allow a per-timestep `Linear` *before* the first RNN on sequential data (`nn.Linear` acts on the last dim: `(N, T, F)` → `(N, T, units)`; `BatchNorm1d` needs a transpose or must be disallowed there).
-2. Extend `backend/core/shapes.py` to report `(seq_len, features)` / `(seq_len, hidden)` shapes along the sequence path; the layer card and diagram should show them.
-3. Decide whether stacked RNN layers should pass full sequences (return_sequences-style wrapper option) instead of the current `_Unsqueeze` degenerate path.
+Quick fix worth doing first: `ArchDiagram.tsx` — React Flow `fitView` runs only on mount, so nodes added later fall outside the `h-72` frame. Re-fit when the node count changes (e.g. `useReactFlow().fitView()` in an effect, or `key={nodes.length}`).
 
-Confirm: on `sine`, `Linear(16) → LSTM(32) → Linear(8)` validates with sensible shapes on every card and trains.
+Step 28: `POST /api/datasets/upload` — parse CSV, auto-detect binary vs multiclass from the label column (and consider regression for a float label now that the task exists), validate shape/class balance, register alongside built-ins (session-scoped, Step 30).
 
 ---
 
@@ -47,7 +43,7 @@ Confirm: on `sine`, `Linear(16) → LSTM(32) → Linear(8)` validates with sensi
 
 | Document | Location | Purpose |
 |---|---|---|
-| **IMPLEMENTATION_PLAN.md** | `nn_builder/IMPLEMENTATION_PLAN.md` | Steps 26–27 acceptance criteria |
-| **PROGRESS.md** | `nn_builder/PROGRESS.md` | Step 25 design notes and airline LSTM-vs-MLP results |
-| **backend/core/inputs.py** | `nn_builder/backend/core/inputs.py` | Input-layout rules Step 26 must extend |
-| **backend/core/shapes.py** / **trainer.py** | `nn_builder/backend/core/` | RNN shape tracking and `build_model` sequential path |
+| **IMPLEMENTATION_PLAN.md** | `nn_builder/IMPLEMENTATION_PLAN.md` | Phase 7 Steps 28–31 acceptance criteria |
+| **PROGRESS.md** | `nn_builder/PROGRESS.md` | Phase 6 design notes and verification |
+| **datasets/registry.py** | `nn_builder/datasets/registry.py` | Where uploaded datasets must register (`meta`, `load`) |
+| **backend/core/inputs.py** | `nn_builder/backend/core/inputs.py` | Input-layout rules an uploaded `.npz` (Step 31) must satisfy |

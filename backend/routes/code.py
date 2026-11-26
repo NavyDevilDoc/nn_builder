@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 import datasets.registry as registry
 from backend.core.inputs import apply_to_config
 from backend.models import CodeResponse
-from components.code_gen import generate_code
+from backend.core.code_gen import generate_code
 
 router = APIRouter(prefix="/api", tags=["code"])
 

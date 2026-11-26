@@ -143,7 +143,7 @@ export function LayerBuilder() {
             {layers.map((layer, i) => (
               <Fragment key={layer.id}>
                 <InsertDivider beforeId={layer.id} />
-                <LayerCard layer={layer} shape={shapeFor(i)} />
+                <LayerCard layer={layer} shape={shapeFor(i)} outShape={shapeFor(i + 1)} />
               </Fragment>
             ))}
           </div>

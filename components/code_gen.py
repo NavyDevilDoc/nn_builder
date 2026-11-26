@@ -176,16 +176,59 @@ def _epoch_loop(config: dict) -> str:
     )
 
 
+def _data_section(config: dict) -> str:
+    """Commented data-loading block.  Sequential datasets get a chronological split."""
+    seed, dataset = config["seed"], config["dataset"]
+    seq_len = config.get("data_seq_len")
+
+    if seq_len is not None:
+        flat = (
+            "# # Pure-Linear network: flatten each window into one feature vector\n"
+            "# X_train, X_val = X_train.reshape(len(X_train), -1), X_val.reshape(len(X_val), -1)\n"
+            if config.get("flatten_sequence") else ""
+        )
+        return (
+            f"# from datasets.registry import load\n"
+            f"#\n"
+            f"# # Windows of shape (N, {seq_len}, features) -> next value.  The split is\n"
+            f"# # chronological (last 20% of windows): shuffling a time series leaks the future.\n"
+            f'# X_train, y_train, X_val, y_val = load("{dataset}", seed={seed}, seq_len={seq_len})\n'
+            f"{flat}"
+        )
+
+    return (
+        f"# from datasets.registry import load\n"
+        f"# from sklearn.model_selection import train_test_split\n"
+        f"#\n"
+        f'# X_train, y_train, X_test, y_test = load("{dataset}", seed={seed})\n'
+        f"# X_tr, X_v, y_tr_np, y_v_np = train_test_split(\n"
+        f"#     X_train, y_train, test_size=0.2, random_state={seed}\n"
+        f"# )\n"
+    )
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def generate_code(config: dict) -> str:
-    """Return a complete, runnable PyTorch script for the given config."""
-    seed    = config["seed"]
-    dataset = config["dataset"]
+def generate_code(config: dict, *, body: str | None = None, preamble: str = "") -> str:
+    """Return a complete, runnable PyTorch script for the given config.
+
+    body:     nn.Sequential layer lines (12-space indent) — overrides _seq_body();
+              used by backend/core/code_gen.py for RNN configs.
+    preamble: helper class/function source emitted before the model
+              (e.g. LSTMWrapper for RNN configs).
+    """
+    seed = config["seed"]
 
     bs_import = (
         "\nfrom torch.utils.data import DataLoader, TensorDataset"
         if config["batch_size"] != "full" else ""
+    )
+    helpers = (
+        f"# -- Helpers -----------------------------------------------------------------\n"
+        f"{preamble.rstrip()}\n"
+        f"\n"
+        f"\n"
+        if preamble else ""
     )
 
     return (
@@ -197,21 +240,16 @@ def generate_code(config: dict) -> str:
         f"\n"
         f"\n"
         f"# -- Data --------------------------------------------------------------------\n"
-        f"# from datasets.registry import load\n"
-        f"# from sklearn.model_selection import train_test_split\n"
-        f"#\n"
-        f'# X_train, y_train, X_test, y_test = load("{dataset}", seed={seed})\n'
-        f"# X_tr, X_v, y_tr_np, y_v_np = train_test_split(\n"
-        f"#     X_train, y_train, test_size=0.2, random_state={seed}\n"
-        f"# )\n"
+        f"{_data_section(config)}"
         f"\n"
         f"\n"
+        f"{helpers}"
         f"# -- Model -------------------------------------------------------------------\n"
         f"class Network(nn.Module):\n"
         f"    def __init__(self):\n"
         f"        super().__init__()\n"
         f"        self.net = nn.Sequential(\n"
-        f"{_seq_body(config)}\n"
+        f"{body if body is not None else _seq_body(config)}\n"
         f"        )\n"
         f"\n"
         f"    def forward(self, x: torch.Tensor) -> torch.Tensor:\n"
@@ -243,5 +281,12 @@ def generate_code(config: dict) -> str:
         f"    model = Network()\n"
         f"    print(model)\n"
         f"    # Load and split data, then:\n"
-        f"    # history = train(model, X_tr, y_tr, X_v, y_v)\n"
+        f"    # {_train_call(config)}\n"
     )
+
+
+def _train_call(config: dict) -> str:
+    """Entry-point call using the variable names _data_section() defines."""
+    if config.get("data_seq_len") is not None:
+        return "history = train(model, X_train, y_train, X_val, y_val)"
+    return "history = train(model, X_tr, y_tr_np, X_v, y_v_np)"

@@ -69,9 +69,11 @@ Anything worth preserving beyond one session goes in `CLAUDE.md`, `IMPLEMENTATIO
 - `darkMode: 'class'` in `tailwind.config.ts`; `<html class="dark">` in `index.html`.
 
 ### RNN layer support
-- `LSTMWrapper` and `GRUWrapper` live in `backend/core/trainer.py`. They are `nn.Module` wrappers that accept `(N, seq_len, features)` and return `(N, hidden_size)` (last timestep only), making them compatible with `nn.Sequential`.
-- Sequential datasets (`sine`, `multi_sine`, `airline`) deliver `(N, seq_len, features)`; the first RNN consumes that directly and must be the first layer. `_Unsqueeze` (`(N, F)` → `(N, 1, F)`) is inserted before every *other* RNN — tabular input, or RNNs stacked after the first.
-- RNN layers cannot currently be mixed with CNN layers (Conv2d, MaxPool2d). `build_model()` enforces this.
+- `backend/core/rnn_plan.py` is the single source of truth for RNN configs. `compute_shapes()`, `build_model()`, and RNN code generation all read `plan_rnn(config)`; never re-derive sequence logic elsewhere.
+- Sequence rule: the time dimension is kept until the **last** LSTM/GRU. An RNN returns its full sequence iff another RNN follows (inferred, not user-set); the last one returns its final timestep. Linear layers that see a sequence act per timestep; their batch norm is `SeqBatchNorm1d`. `_Unsqueeze` is inserted only when an RNN receives flat input (non-sequential data).
+- `LSTMWrapper` / `GRUWrapper` (`backend/core/trainer.py`) take `return_sequences`. Bidirectional final state = forward at `t=-1` concatenated with backward at `t=0` (`_last_step`).
+- RNN code generation (`backend/core/code_gen.py`) emits the helper classes via `inspect.getsource`, so they must stay self-contained (torch / torch.nn only).
+- RNN layers cannot be mixed with CNN layers (Conv2d, MaxPool2d, Flatten).
 - Input layout (image vs flat, sequence vs flattened window) is decided only in `backend/core/inputs.py`. Train, validate, and code routes must all go through it — never re-derive it in a route.
 
 ### Task types
@@ -92,7 +94,9 @@ Anything worth preserving beyond one session goes in `CLAUDE.md`, `IMPLEMENTATIO
 | 80/20 train/val split seeded by config | Reproducibility across Train clicks with the same config. |
 | Flat optional fields in `LayerConfig` | A discriminated union (one Pydantic/TS type per layer kind) would require structural changes to add a new layer type. The flat optional pattern means adding LSTM/GRU was one `elif` branch. |
 | `LSTMWrapper` / `GRUWrapper` | `nn.LSTM` and `nn.GRU` return `(output, hidden_state)` tuples; `nn.Sequential` can't pipe a tuple to the next layer. The wrappers extract only the last timestep's output, restoring compatibility. |
-| `_Unsqueeze` before non-first RNN layers | Tabular input is `(N, features)`; RNN expects `(N, seq_len, features)`. Auto-inserting `unsqueeze(1)` avoids a mandatory Reshape layer. Skipped for the first RNN on sequential datasets, which already have a sequence dimension. |
+| `_Unsqueeze` only for flat RNN input | Tabular input is `(N, features)`; RNN expects `(N, seq_len, features)`. Auto-inserting `unsqueeze(1)` avoids a mandatory Reshape layer. Sequential datasets never need it. |
+| Inferred `return_sequences` | An RNN returns its full sequence iff another RNN follows. Removes a checkbox users could set inconsistently; the layer card states what was inferred. |
+| Generated code uses `inspect.getsource` on the real wrappers | Generated script and trained model cannot drift; verified by loading `build_model` weights into the generated `Network` and asserting identical outputs. |
 | Regression reuses `*_acc` history keys (R²) | Keeps the SSE wire format, store, and charts task-agnostic; the frontend relabels by task. |
 | Windows flattened for non-RNN nets on sequential data | Gives an MLP baseline on identical windows instead of an error — directly comparable to the LSTM. |
 | Vite proxy `/api` → `localhost:8000` | Eliminates CORS during development. The backend still carries `CORSMiddleware` for production serving (single process, FastAPI serves the built `frontend/dist/`). |

@@ -179,9 +179,20 @@ All three planned sequential datasets turned out to be next-value forecasting �
 
 **Results** (seed 42, Adam lr 0.01, batch 32): sine and multi_sine reach val R² ≈ 0.99 in 30–100 epochs for both LSTM and MLP. Airline is the instructive one — validation years sit above every training value, so the LSTM (saturating tanh) must extrapolate trend: val R² ≈ 0.4 at 100 epochs, 0.65–0.83 at 500–1000, while the ReLU MLP baseline gets ≈ 0.88–0.9. Train R² hits 1.0 on 105 windows — classic small-data overfitting, worth demonstrating.
 
+### Phase 6, Steps 26–27 — Sequence Shapes + RNN Code Generation (2026-11-25)
+
+**One plan, three consumers** (`backend/core/rnn_plan.py`): `plan_rnn(config)` returns a `LayerStep` per hidden layer — in/out shape, whether to insert `_Unsqueeze`, whether the RNN returns sequences, and a first-cause error. `compute_shapes()`, `build_model()`, and the code generator all read it, so annotations, the trained model, and generated code cannot disagree.
+
+**Sequence rule**: the time dimension survives until the *last* LSTM/GRU. `return_sequences` is inferred — an RNN returns `(T, H)` iff another RNN follows; the last returns `(H,)`. Linear layers on a sequence act per timestep (`nn.Linear` already maps the last dim), with `SeqBatchNorm1d` transposing `(N, T, C)` ↔ `(N, C, T)` around `BatchNorm1d`. This lifts Step 25's "RNN must be first" restriction. The LSTM/GRU card shows what was inferred ("Returns [20 × 32] — full sequence").
+
+**Latent bidirectional bug fixed**: the wrappers took `out[:, -1, :]`, which for the backward direction is a state that has seen one timestep. Invisible at seq_len=1; wrong on real sequences. `_last_step` now concatenates forward `t=-1` with backward `t=0`.
+
+**Code generation** (`backend/core/code_gen.py`): RNN configs build the `nn.Sequential` body from the plan (with per-layer shape comments) and emit only the helpers they use via `inspect.getsource` — the generated script contains the exact classes that trained. `components/code_gen.generate_code` gained `body` / `preamble` hooks so the training loop isn't duplicated, and a sequential data section (chronological split, no `train_test_split`). Also fixed the tabular entry-point comment referencing undefined `y_tr`/`y_v`.
+
+**Verification**: a 10-config harness (sequential, tabular, stacked, bidirectional, `num_layers=2`, per-timestep BN, MLP baseline, CNN+RNN rejection) checks predicted shapes against real activations layer by layer, loads `build_model`'s weights into the generated `Network` and asserts bit-identical outputs (`torch.equal`), and trains each config. All pass; also driven end-to-end in the browser.
+
 ### What's next
 
-- **Phase 6, Step 26**: `compute_shapes()` for multi-step sequential shapes — per-timestep Linear before an RNN, `return_sequences`-style stacking.
-- **Phase 6, Step 27**: `code_gen.py` for LSTMWrapper/GRUWrapper (RNN configs still 400 in the code viewer).
-- **Phase 7**: Custom dataset upload (CSV tabular, .npz sequential).
+- **Arch diagram**: React Flow `fitView` runs only on mount, so nodes added later fall outside the frame (pre-existing).
+- **Phase 7**: Custom dataset upload (CSV tabular, `.npz` sequential).
 - **Phase 8**: Graph mode node editor.
