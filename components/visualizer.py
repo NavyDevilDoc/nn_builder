@@ -2,7 +2,8 @@
 
 plot_loss_curve(history)                          -> Figure  (always)
 plot_decision_boundary(model, X, y, config)       -> Figure  (2D datasets)
-plot_confusion_matrix(model, X_test, y_test, config) -> Figure  (all datasets)
+plot_confusion_matrix(model, X_test, y_test, config) -> Figure  (classification)
+plot_predictions(model, X_test, y_test)           -> Figure  (regression / time series)
 """
 from __future__ import annotations
 
@@ -182,4 +183,36 @@ def plot_confusion_matrix(
     ax.set_title("Confusion Matrix (test set)")
 
     fig.tight_layout(pad=0.5)
+    return fig
+
+
+# ── Regression predictions ─────────────────────────────────────────────────────
+
+def plot_predictions(
+    model: torch.nn.Module,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+) -> Figure:
+    """Actual vs predicted on the held-out (chronologically last) windows.
+
+    Each prediction is one-step-ahead from a true input window (teacher forcing),
+    not a free-running rollout.  Values are in the dataset's normalised units.
+    X_test: (N, seq_len, F) or (N, D) float32   y_test: (N,) float32
+    """
+    model.eval()
+    with torch.no_grad():
+        y_pred = model(torch.tensor(X_test, dtype=torch.float32)).squeeze(1).numpy()
+
+    t = np.arange(len(y_test))
+    fig = Figure(figsize=(7.0, 3.2))
+    ax  = fig.add_subplot(111)
+    ax.plot(t, y_test, color="#2E86C1", lw=1.6, label="Actual")
+    ax.plot(t, y_pred, color="#E74C3C", lw=1.4, ls="--", label="Predicted")
+    ax.set_xlabel("Validation step")
+    ax.set_ylabel("Value (normalised)")
+    ax.set_title("One-step-ahead forecast (validation span)")
+    ax.legend(fontsize=8)
+    ax.grid(True, ls=":", lw=0.5, alpha=0.5)
+
+    fig.tight_layout(pad=0.6)
     return fig

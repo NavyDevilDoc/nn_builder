@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Play, Square, AlertCircle } from "lucide-react";
 import { useBuilderStore } from "../store/useBuilderStore";
-import { streamTraining, cancelTraining } from "../api/client";
+import { fetchDatasets, streamTraining, cancelTraining } from "../api/client";
+import { formatMetric, metricName } from "../lib/metrics";
 import type { EpochEvent } from "../types/config";
 
 function fmt(n: number, decimals = 4) {
@@ -28,6 +30,8 @@ export function TrainingPanel() {
   const pushEpoch      = useBuilderStore((s) => s.pushEpoch);
   const finishTraining = useBuilderStore((s) => s.finishTraining);
 
+  const { data: datasetsData } = useQuery({ queryKey: ["datasets"], queryFn: fetchDatasets });
+
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -53,7 +57,7 @@ export function TrainingPanel() {
 
     // sessionId is generated server-side and returned in the "done" event;
     // use a placeholder until then so startTraining can reset history now.
-    startTraining("pending");
+    startTraining("pending", datasetsData?.meta[hyperparams.dataset]?.task ?? null);
 
     try {
       const base   = getConfig();
@@ -147,8 +151,14 @@ export function TrainingPanel() {
         <div className="flex flex-wrap gap-4 pt-1">
           <StatPill label="train loss" value={fmt(history.train_loss[lastIdx])} />
           <StatPill label="val loss"   value={fmt(history.val_loss[lastIdx])} />
-          <StatPill label="train acc"  value={`${(history.train_acc[lastIdx] * 100).toFixed(1)}%`} />
-          <StatPill label="val acc"    value={`${(history.val_acc[lastIdx] * 100).toFixed(1)}%`} />
+          <StatPill
+            label={`train ${metricName(training.task)}`}
+            value={formatMetric(history.train_acc[lastIdx], training.task)}
+          />
+          <StatPill
+            label={`val ${metricName(training.task)}`}
+            value={formatMetric(history.val_acc[lastIdx], training.task)}
+          />
         </div>
       )}
 

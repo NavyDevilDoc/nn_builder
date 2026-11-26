@@ -12,7 +12,9 @@ export function CodeViewer() {
 
   const getConfig = useBuilderStore((s) => s.getConfig);
   const layers    = useBuilderStore((s) => s.layers);
-  const hyperparams = useBuilderStore((s) => s.hyperparams);
+  // Subscribe (value unused) so a hyperparam change re-renders this component,
+  // which recomputes getConfig() below and with it the query key.
+  useBuilderStore((s) => s.hyperparams);
 
   // Re-fetch whenever the config changes; disabled when panel is closed.
   const config = getConfig();

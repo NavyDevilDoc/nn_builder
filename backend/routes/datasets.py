@@ -28,6 +28,7 @@ def _info_to_model(name: str) -> DatasetInfo:
         n_classes=info.n_classes,
         description=info.description,
         input_shape=list(info.input_shape) if info.input_shape else None,
+        seq_len=info.seq_len,
     )
 
 

@@ -92,7 +92,9 @@ def render() -> dict:
 
     # ── Dataset ──────────────────────────────────────────────────────────
     st.subheader("Dataset")
-    names   = list_datasets()
+    # Sequential (regression) datasets are React-app only — the Streamlit
+    # prototype has no regression metrics or sequence-aware visualizations.
+    names   = [n for n in list_datasets() if dataset_meta(n).seq_len is None]
     dataset = st.selectbox(
         "Dataset", names,
         index=names.index("moons"),

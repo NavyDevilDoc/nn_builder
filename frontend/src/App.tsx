@@ -9,7 +9,7 @@ import { TrainingPanel }  from "./components/TrainingPanel";
 import { ResultsPanel }   from "./components/ResultsPanel";
 import { CodeViewer }     from "./components/CodeViewer";
 import { ArchDiagram }    from "./components/ArchDiagram";
-import type { DatasetInfo, LayerConfig } from "./types/config";
+import { effectiveSeqLen, type DatasetInfo, type LayerConfig } from "./types/config";
 import type { BuilderConfig } from "./types/config";
 
 // ── Dataset selector ──────────────────────────────────────────────────────────
@@ -18,8 +18,15 @@ function DatasetMeta({ info }: { info: DatasetInfo }) {
   return (
     <span className="flex gap-1.5 flex-wrap text-xs text-zinc-500">
       <span className="rounded bg-zinc-800 px-1.5 py-0.5">{info.task}</span>
-      <span className="rounded bg-zinc-800 px-1.5 py-0.5">{info.n_classes} classes</span>
-      <span className="rounded bg-zinc-800 px-1.5 py-0.5">dim={info.input_dim}</span>
+      {info.task !== "regression" && (
+        <span className="rounded bg-zinc-800 px-1.5 py-0.5">{info.n_classes} classes</span>
+      )}
+      <span className="rounded bg-zinc-800 px-1.5 py-0.5">
+        {info.seq_len !== null ? `features=${info.input_dim}` : `dim=${info.input_dim}`}
+      </span>
+      {info.seq_len !== null && (
+        <span className="rounded bg-zinc-800 px-1.5 py-0.5">sequential</span>
+      )}
       {info.input_shape && (
         <span className="rounded bg-zinc-800 px-1.5 py-0.5">
           {info.input_shape.join("×")}
@@ -36,6 +43,7 @@ function DatasetSelector() {
   });
 
   const selected          = useBuilderStore((s) => s.hyperparams.dataset);
+  const seqLenOverride    = useBuilderStore((s) => s.hyperparams.seq_len);
   const updateHyperparams = useBuilderStore((s) => s.updateHyperparams);
 
   const meta = data?.meta[selected];
@@ -58,7 +66,8 @@ function DatasetSelector() {
       <div className="flex items-center gap-3 flex-wrap">
         <select
           value={selected}
-          onChange={(e) => updateHyperparams({ dataset: e.target.value })}
+          // A window-length override only makes sense for the dataset it was set on
+          onChange={(e) => updateHyperparams({ dataset: e.target.value, seq_len: null })}
           className="
             bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5
             text-sm text-zinc-100 font-mono
@@ -74,6 +83,34 @@ function DatasetSelector() {
         {meta && <DatasetMeta info={meta} />}
       </div>
       {meta && <p className="text-xs text-zinc-500">{meta.description}</p>}
+      {meta && meta.seq_len !== null && (
+        <label className="flex items-center gap-2 text-xs text-zinc-400">
+          Window length (seq_len)
+          <input
+            type="number"
+            min={2}
+            max={500}
+            value={effectiveSeqLen(meta, seqLenOverride) ?? ""}
+            onChange={(e) => {
+              const n = Math.round(Number(e.target.value));
+              if (n >= 2) updateHyperparams({ seq_len: n === meta.seq_len ? null : n });
+            }}
+            className="
+              w-20 bg-zinc-800 border border-zinc-700 rounded px-2 py-1
+              text-sm text-zinc-100 text-left
+              focus:outline-none focus:ring-1 focus:ring-zinc-500
+            "
+          />
+          {seqLenOverride !== null && seqLenOverride !== undefined && (
+            <button
+              onClick={() => updateHyperparams({ seq_len: null })}
+              className="text-zinc-500 hover:text-zinc-300 underline-offset-2 hover:underline"
+            >
+              reset to {meta.seq_len}
+            </button>
+          )}
+        </label>
+      )}
       {sampleData && (
         <img
           src={sampleData.image}

@@ -22,6 +22,7 @@ from fastapi import APIRouter
 from fastapi.responses import Response, StreamingResponse
 
 import datasets.registry as registry
+from backend.core.inputs import apply_to_config, reshape_for_config
 from backend.core.trainer import build_model
 from backend.models import BuilderConfig
 from backend.session_store import sessions
@@ -43,28 +44,19 @@ async def start_training(config: BuilderConfig) -> StreamingResponse:
             {"type": "epoch", "epoch": epoch, "total": config.epochs, **metrics},
         )
 
-    _CNN_TYPES = frozenset({"Conv2d", "MaxPool2d", "Flatten"})
-
     def _thread() -> None:
         try:
             cfg = config.model_dump()
 
-            info = registry.meta(cfg["dataset"])
-            cfg["task"]        = info.task
-            cfg["n_classes"]   = info.n_classes
-            cfg["input_dim"]   = info.input_dim
-            cfg["input_shape"] = list(info.input_shape) if info.input_shape else None
-
-            # If the user built a pure-Linear (or RNN) network on an image dataset,
-            # treat the data as flat: clear input_shape so train_model keeps (N, D)
-            # and build_model uses input_dim (the flattened size) for the first layer.
-            layer_types = {l.get("type", "Linear") for l in cfg["hidden_layers"]}
-            if cfg["input_shape"] is not None and not (layer_types & _CNN_TYPES):
-                cfg["input_shape"] = None
+            # Merge dataset metadata and decide the input layout (image vs flat,
+            # sequence vs flattened window) — see backend/core/inputs.py.
+            apply_to_config(cfg, registry.meta(cfg["dataset"]))
 
             X_train, y_train, X_test, y_test = registry.load(
-                cfg["dataset"], seed=cfg["seed"]
+                cfg["dataset"], seed=cfg["seed"], seq_len=cfg["data_seq_len"]
             )
+            X_train = reshape_for_config(X_train, cfg)
+            X_test  = reshape_for_config(X_test, cfg)
 
             model = build_model(cfg)
             trained_model, history = train_model(

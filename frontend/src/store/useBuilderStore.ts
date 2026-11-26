@@ -5,6 +5,7 @@ import type {
   EpochEvent,
   LayerConfig,
   LayerType,
+  Task,
 } from "../types/config";
 
 // ── Layer defaults per type ───────────────────────────────────────────────────
@@ -32,6 +33,7 @@ const DEFAULT_HYPERPARAMS: Omit<BuilderConfig, "hidden_layers"> = {
   es_patience:    20,
   es_min_delta:   0.0,
   device:         "cpu",
+  seq_len:        null,
 };
 
 // ── Store shape ───────────────────────────────────────────────────────────────
@@ -39,6 +41,7 @@ const DEFAULT_HYPERPARAMS: Omit<BuilderConfig, "hidden_layers"> = {
 interface TrainingState {
   active:     boolean;
   sessionId:  string | null;
+  task:       Task | null;   // task of the run that produced `history` (labels R² vs acc)
   epochsDone: number;
   history: {
     train_loss: number[];
@@ -51,7 +54,14 @@ interface TrainingState {
 interface ResultsState {
   confusionMatrix:   string | null;
   decisionBoundary:  string | null;
+  predictions:       string | null;   // regression: forecast vs actual
 }
+
+const EMPTY_RESULTS: ResultsState = {
+  confusionMatrix:  null,
+  decisionBoundary: null,
+  predictions:      null,
+};
 
 interface BuilderStore {
   layers:      LayerConfig[];                       // frontend layers — carry id
@@ -83,7 +93,7 @@ interface BuilderStore {
   updateHyperparams: (patch: Partial<Omit<BuilderConfig, "hidden_layers">>) => void;
 
   // Training actions
-  startTraining:  (sessionId: string) => void;
+  startTraining:  (sessionId: string, task: Task | null) => void;
   setSessionId:   (sessionId: string) => void;
   pushEpoch:      (event: EpochEvent) => void;
   finishTraining: () => void;
@@ -91,6 +101,7 @@ interface BuilderStore {
   // Result actions
   setConfusionMatrix:  (image: string) => void;
   setDecisionBoundary: (image: string) => void;
+  setPredictions:      (image: string) => void;
 }
 
 // ── Store implementation ──────────────────────────────────────────────────────
@@ -107,13 +118,11 @@ export const useBuilderStore = create<BuilderStore>()(
   training: {
     active:     false,
     sessionId:  null,
+    task:       null,
     epochsDone: 0,
     history:    { train_loss: [], val_loss: [], train_acc: [], val_acc: [] },
   },
-  results: {
-    confusionMatrix:  null,
-    decisionBoundary: null,
-  },
+  results: EMPTY_RESULTS,
 
   getConfig: () => {
     const { layers, hyperparams, weightDecayEnabled } = get();
@@ -167,9 +176,10 @@ export const useBuilderStore = create<BuilderStore>()(
   loadConfig: (layers, hyperparams) =>
     set({
       layers,
-      hyperparams,
-      training: { active: false, sessionId: null, epochsDone: 0, history: { train_loss: [], val_loss: [], train_acc: [], val_acc: [] } },
-      results:  { confusionMatrix: null, decisionBoundary: null },
+      // Fill fields missing from configs exported before they existed (e.g. seq_len)
+      hyperparams: { ...DEFAULT_HYPERPARAMS, ...hyperparams },
+      training: { active: false, sessionId: null, task: null, epochsDone: 0, history: { train_loss: [], val_loss: [], train_acc: [], val_acc: [] } },
+      results:  EMPTY_RESULTS,
     }),
 
   // ── Hyperparameter actions ──────────────────────────────────────────────────
@@ -179,15 +189,16 @@ export const useBuilderStore = create<BuilderStore>()(
 
   // ── Training actions ────────────────────────────────────────────────────────
 
-  startTraining: (sessionId) =>
+  startTraining: (sessionId, task) =>
     set({
       training: {
         active:     true,
         sessionId,
+        task,
         epochsDone: 0,
         history:    { train_loss: [], val_loss: [], train_acc: [], val_acc: [] },
       },
-      results: { confusionMatrix: null, decisionBoundary: null },
+      results: EMPTY_RESULTS,
     }),
 
   pushEpoch: (event) =>
@@ -214,9 +225,20 @@ export const useBuilderStore = create<BuilderStore>()(
 
   setConfusionMatrix:  (image) => set((s) => ({ results: { ...s.results, confusionMatrix: image } })),
   setDecisionBoundary: (image) => set((s) => ({ results: { ...s.results, decisionBoundary: image } })),
+  setPredictions:      (image) => set((s) => ({ results: { ...s.results, predictions: image } })),
     }),
     {
       name: "nn-builder-store",
+      // Default merge is shallow: a persisted `hyperparams` object would replace
+      // the defaults wholesale and drop fields added since it was saved.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<BuilderStore>;
+        return {
+          ...current,
+          ...p,
+          hyperparams: { ...current.hyperparams, ...p.hyperparams },
+        };
+      },
       partialize: (state) => ({
         layers:             state.layers,
         hyperparams:        state.hyperparams,

@@ -9,7 +9,7 @@ import "reactflow/dist/style.css";
 import { useBuilderStore } from "../store/useBuilderStore";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDatasets, validateConfig } from "../api/client";
-import type { LayerConfig, LayerType } from "../types/config";
+import { effectiveSeqLen, type LayerConfig, type LayerType } from "../types/config";
 
 // ── Colors matching LayerTypeSelect ──────────────────────────────────────────
 
@@ -87,7 +87,7 @@ export function ArchDiagram() {
   });
 
   const { data: validation } = useQuery({
-    queryKey: ["validate-diagram", layers, hyperparams.dataset],
+    queryKey: ["validate-diagram", layers, hyperparams.dataset, hyperparams.seq_len],
     queryFn: async () => {
       const meta = datasetsData?.meta[hyperparams.dataset];
       if (!meta || layers.length === 0) return null;
@@ -97,6 +97,7 @@ export function ArchDiagram() {
         meta.task,
         meta.n_classes,
         layers.map(({ id: _id, ...rest }) => rest),
+        effectiveSeqLen(meta, hyperparams.seq_len),
       );
     },
     enabled: !!datasetsData && layers.length > 0,

@@ -5,53 +5,41 @@
 
 ## 1. Where we left off
 
-**Phases 1–5 complete. Phase 8 planned. Both servers confirmed working.**
+**Phase 6, Step 25 complete: sequential datasets + a `regression` task type, verified end-to-end in the browser.**
 
 ```
 # Backend — run from nn_builder/
 uv run uvicorn backend.main:app --reload --port 8000
-# Confirm: curl http://localhost:8000/api/datasets  → JSON with 9 datasets
-
 # Frontend — run from nn_builder/frontend/
 npm run dev
-# Confirm: http://localhost:5173  → split-panel UI, both columns scroll independently
+# Confirm: select "sine" → "+ LSTM" → Train → stats read "train R² / val R²" ≈ 0.99;
+#          "Generate visualizations" → forecast-vs-actual plot.
 ```
 
-**What was built this session:**
+**What was built:**
+- `datasets/sequential.py` (sine, multi_sine, airline loaders + `make_windows`), `datasets/airline_passengers.csv`
+- `registry.load(name, seed, seq_len)` — windowing, chronological split, train-span normalization
+- `backend/core/inputs.py` — single source of truth for input layout, used by train / validate / code routes
+- Regression in `components/trainer.py`, `shapes.py`, `code_gen.py`, `visualizer.py` (`plot_predictions`); `POST /api/visualize/predictions`
+- Frontend: seq_len input in the dataset selector (resets on dataset change), task-aware R² labels (`src/lib/metrics.ts`), forecast plot, persist `merge` that deep-merges `hyperparams`
+- Fixed a pre-existing `tsc` error in `CodeViewer.tsx` (`npm run build` now passes)
 
-- `useBuilderStore.ts` — `insertLayerBefore`, `loadConfig`, `weightDecayEnabled`, `fixedSeed`, `setWeightDecayEnabled`, `setFixedSeed`; `getConfig()` zeroes weight_decay when disabled; `persist` middleware now also saves `weightDecayEnabled` and `fixedSeed`
-- `LayerBuilder.tsx` — `InsertDivider` between every card (closed: thin line + `+` icon; open: inline type picker); uses `Fragment` so dnd-kit only sees `LayerCard` nodes as sortable
-- `LayerCard.tsx` — red left border + `AlertTriangle` icon when `shape === null`; number inputs left-aligned
-- `HyperparamPanel.tsx` — weight decay and seed rows now have `Enabled`/`Fixed` toggles matching the early stopping pattern; number inputs left-aligned
-- `TrainingPanel.tsx` — randomizes seed at train time when `fixedSeed` is off
-- `ArchDiagram.tsx` — fixed height `h-72`; `zoomOnScroll={false}` so wheel scrolls the page
-- `App.tsx` — `h-screen overflow-hidden` for independent column scrolling; dark/light toggle (`Sun`/`Moon`); export (`Download`) and import (`Upload`) in header; dataset thumbnail via TanStack Query (`enabled: !!meta?.input_shape`, `staleTime: Infinity`)
-- `client.ts` — `fetchDatasetSample(name)` added
-- `IMPLEMENTATION_PLAN.md` — Phase 5 steps marked complete, Step 21 dropped, Phase 8 (Steps 32–38) added
-- `PROGRESS.md` — Phase 5 additions documented; Phase 8 rationale written; "What's next" updated
-
-**Gotchas from this session:**
-- Zustand selector returning an object literal (`(s) => ({ a: s.a, b: s.b })`) causes infinite re-renders. Use separate scalar selectors or `useBuilderStore.getState()` inside event handlers.
-- Tailwind v4 uses `@custom-variant dark` in CSS — no `tailwind.config.ts`. The variant is already wired in `src/index.css`.
+**Gotchas:**
+- **Laptop only:** `uv sync` needs `--native-tls` (TLS interception). Python/Node clients intermittently get `ECONNRESET` on loopback responses ≳70 KB — reproduced with a bare `http.server`, so it's environmental, not the app. It can make "Generate visualizations" fail through the Vite proxy; retrying works. curl is unaffected.
+- PowerShell 5.1 strips embedded `"` from arguments to native exes — put JSON for curl in a file and use `--data-binary @file`.
+- On sequential datasets the first layer must be LSTM/GRU (Linear-first shows as invalid shape).
 
 ---
 
 ## 2. Where we're starting
 
-**Phase 6, Step 25: Sequential datasets.**
+**Phase 6, Step 26: multi-step sequential shapes.**
 
-The LSTM/GRU layer types exist and train, but on tabular data with `seq_len=1` — architecturally valid, pedagogically useless. Meaningful RNN demos require real sequence data.
+1. Allow a per-timestep `Linear` *before* the first RNN on sequential data (`nn.Linear` acts on the last dim: `(N, T, F)` → `(N, T, units)`; `BatchNorm1d` needs a transpose or must be disallowed there).
+2. Extend `backend/core/shapes.py` to report `(seq_len, features)` / `(seq_len, hidden)` shapes along the sequence path; the layer card and diagram should show them.
+3. Decide whether stacked RNN layers should pass full sequences (return_sequences-style wrapper option) instead of the current `_Unsqueeze` degenerate path.
 
-Minimum deliverable:
-1. **Three dataset loaders** in `datasets/` returning `(N, seq_len, features)` arrays:
-   - Sine wave (single frequency, regression warmup)
-   - Multi-frequency superposition (harder regression)
-   - Airline passengers or similar real-world series (classic LSTM benchmark)
-2. **`seq_len` added to `BuilderConfig`** — both Pydantic (`backend/models.py`) and TypeScript (`types/config.ts`)
-3. **Backend `train_model()` update**: skip the `_Unsqueeze` auto-insert when `seq_len > 1` (the data already has the sequence dimension)
-4. **`datasets/registry.py`** — register the new loaders, add them to `meta()` and `list()`
-
-Confirm: select a sequential dataset, add an LSTM layer, click Train → loss decreases meaningfully.
+Confirm: on `sine`, `Linear(16) → LSTM(32) → Linear(8)` validates with sensible shapes on every card and trains.
 
 ---
 
@@ -59,8 +47,7 @@ Confirm: select a sequential dataset, add an LSTM layer, click Train → loss de
 
 | Document | Location | Purpose |
 |---|---|---|
-| **IMPLEMENTATION_PLAN.md** | `nn_builder/IMPLEMENTATION_PLAN.md` | Phase 6 steps 25–27 with acceptance criteria; Phase 8 graph mode sketch |
-| **CLAUDE.md** | `nn_builder/CLAUDE.md` | RNN layer design; `_Unsqueeze` rationale; `train_model()` signature contract |
-| **datasets/builtin.py** | `nn_builder/datasets/builtin.py` | Existing loader pattern to follow for new sequential loaders |
-| **datasets/registry.py** | `nn_builder/datasets/registry.py` | Where to register new datasets |
-| **backend/core/trainer.py** | `nn_builder/backend/core/trainer.py` | `LSTMWrapper`, `GRUWrapper`, `_Unsqueeze` — the code to conditionally bypass |
+| **IMPLEMENTATION_PLAN.md** | `nn_builder/IMPLEMENTATION_PLAN.md` | Steps 26–27 acceptance criteria |
+| **PROGRESS.md** | `nn_builder/PROGRESS.md` | Step 25 design notes and airline LSTM-vs-MLP results |
+| **backend/core/inputs.py** | `nn_builder/backend/core/inputs.py` | Input-layout rules Step 26 must extend |
+| **backend/core/shapes.py** / **trainer.py** | `nn_builder/backend/core/` | RNN shape tracking and `build_model` sequential path |

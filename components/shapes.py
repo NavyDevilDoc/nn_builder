@@ -75,7 +75,7 @@ def compute_shapes(config: dict) -> list[tuple | None]:
         shapes.append(current)
 
     # Output layer shape
-    if config["task"] == "binary":
+    if config["task"] in ("binary", "regression"):
         shapes.append((1,) if current is not None else None)
     else:
         shapes.append((config["n_classes"],) if current is not None else None)

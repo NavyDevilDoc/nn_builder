@@ -16,7 +16,7 @@ Both the Streamlit prototype and the React + FastAPI rebuild live in the same `n
 
 ```
 # Streamlit prototype (complete)
-cd C:\Users\docsp\Desktop\AI_ML_Folder\Python_Practice_Folder\AI_Tutorials\nn_builder
+# Run from the repo root (path differs between Jeremy's desktop and laptop)
 uv run streamlit run app.py          # http://localhost:8501
 
 # FastAPI backend (React rebuild)
@@ -70,9 +70,13 @@ Anything worth preserving beyond one session goes in `CLAUDE.md`, `IMPLEMENTATIO
 
 ### RNN layer support
 - `LSTMWrapper` and `GRUWrapper` live in `backend/core/trainer.py`. They are `nn.Module` wrappers that accept `(N, seq_len, features)` and return `(N, hidden_size)` (last timestep only), making them compatible with `nn.Sequential`.
-- An `_Unsqueeze` module is auto-inserted before each RNN layer to promote tabular `(N, features)` → `(N, 1, features)`. This is degenerate (seq_len=1) but architecturally valid.
+- Sequential datasets (`sine`, `multi_sine`, `airline`) deliver `(N, seq_len, features)`; the first RNN consumes that directly and must be the first layer. `_Unsqueeze` (`(N, F)` → `(N, 1, F)`) is inserted before every *other* RNN — tabular input, or RNNs stacked after the first.
 - RNN layers cannot currently be mixed with CNN layers (Conv2d, MaxPool2d). `build_model()` enforces this.
-- Sequential datasets (time-series, text) are needed for meaningful RNN demonstrations. That work is deferred to a future phase alongside the sequential dataset additions.
+- Input layout (image vs flat, sequence vs flattened window) is decided only in `backend/core/inputs.py`. Train, validate, and code routes must all go through it — never re-derive it in a route.
+
+### Task types
+- `binary` | `multiclass` | `regression`. Regression: `Linear(→1)`, `MSELoss`, y float32 `(N, 1)`. History keys stay `train_acc`/`val_acc` for every task; for regression they hold R². Keep `components/trainer.py` and `components/code_gen.py` in sync when touching task handling.
+- Sequential splits are chronological (never shuffled), normalized with training-span statistics only.
 
 ## Key decisions (do not re-litigate)
 
@@ -88,5 +92,7 @@ Anything worth preserving beyond one session goes in `CLAUDE.md`, `IMPLEMENTATIO
 | 80/20 train/val split seeded by config | Reproducibility across Train clicks with the same config. |
 | Flat optional fields in `LayerConfig` | A discriminated union (one Pydantic/TS type per layer kind) would require structural changes to add a new layer type. The flat optional pattern means adding LSTM/GRU was one `elif` branch. |
 | `LSTMWrapper` / `GRUWrapper` | `nn.LSTM` and `nn.GRU` return `(output, hidden_state)` tuples; `nn.Sequential` can't pipe a tuple to the next layer. The wrappers extract only the last timestep's output, restoring compatibility. |
-| `_Unsqueeze` before each RNN layer | Tabular input is `(N, features)`; RNN expects `(N, seq_len, features)`. Auto-inserting `unsqueeze(1)` avoids a mandatory Reshape layer in every RNN config. |
+| `_Unsqueeze` before non-first RNN layers | Tabular input is `(N, features)`; RNN expects `(N, seq_len, features)`. Auto-inserting `unsqueeze(1)` avoids a mandatory Reshape layer. Skipped for the first RNN on sequential datasets, which already have a sequence dimension. |
+| Regression reuses `*_acc` history keys (R²) | Keeps the SSE wire format, store, and charts task-agnostic; the frontend relabels by task. |
+| Windows flattened for non-RNN nets on sequential data | Gives an MLP baseline on identical windows instead of an error — directly comparable to the LSTM. |
 | Vite proxy `/api` → `localhost:8000` | Eliminates CORS during development. The backend still carries `CORSMiddleware` for production serving (single process, FastAPI serves the built `frontend/dist/`). |

@@ -3,6 +3,7 @@
 The generated code mirrors exactly what trainer.py executes:
   - Binary task  : Sigmoid output, BCELoss, y as float32 shape (N, 1)
   - Multiclass   : raw logit output, CrossEntropyLoss, y as long shape (N,)
+  - Regression   : Linear(->1) output, MSELoss, y as float32 (N, 1); *_acc = R^2
   - Momentum opt : SGD with momentum=0.9
   - Mini-batch   : DataLoader over TensorDataset; eval always on full tensors
   - Image input  : flat (N, D) arrays reshaped to (N, C, H, W) before forward pass
@@ -61,6 +62,9 @@ def _seq_body(config: dict) -> str:
     if config["task"] == "binary":
         lines.append(f"            nn.Linear({final_units}, 1),")
         lines.append( "            nn.Sigmoid(),")
+    elif config["task"] == "regression":
+        lines.append(f"            nn.Linear({final_units}, 1),")
+        lines.append( "            # Regression: unbounded output, no activation")
     else:
         lines.append(f"            nn.Linear({final_units}, {config['n_classes']}),")
         lines.append( "            # CrossEntropyLoss applies log-softmax internally - no activation here")
@@ -70,6 +74,8 @@ def _seq_body(config: dict) -> str:
 def _criterion_line(config: dict) -> str:
     if config["task"] == "binary":
         return "    criterion = nn.BCELoss()"
+    if config["task"] == "regression":
+        return "    criterion = nn.MSELoss()"
     return "    criterion = nn.CrossEntropyLoss()"
 
 
@@ -86,7 +92,7 @@ def _optimizer_line(config: dict) -> str:
 
 def _tensor_lines(config: dict) -> str:
     """Lines that build X / y tensors inside train(), 4-space indent."""
-    if config["task"] == "binary":
+    if config["task"] in ("binary", "regression"):
         base = (
             "    X_tr = torch.tensor(X_train, dtype=torch.float32)\n"
             "    y_tr = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)\n"
@@ -141,6 +147,9 @@ def _epoch_loop(config: dict) -> str:
     if task == "binary":
         acc_tr = "            train_acc = ((train_out > 0.5).float() == y_tr).float().mean().item()"
         acc_v  = "            val_acc   = ((val_out   > 0.5).float() == y_v ).float().mean().item()"
+    elif task == "regression":
+        acc_tr = "            train_acc = (1 - ((y_tr - train_out) ** 2).sum() / ((y_tr - y_tr.mean()) ** 2).sum()).item()  # R^2"
+        acc_v  = "            val_acc   = (1 - ((y_v  - val_out)   ** 2).sum() / ((y_v  - y_v.mean())  ** 2).sum()).item()  # R^2"
     else:
         acc_tr = "            train_acc = (train_out.argmax(1) == y_tr).float().mean().item()"
         acc_v  = "            val_acc   = (val_out.argmax(1)   == y_v ).float().mean().item()"

@@ -7,10 +7,13 @@ For RNN-containing configs:
   - LSTMWrapper / GRUWrapper make nn.LSTM / nn.GRU compatible with nn.Sequential
     by discarding the hidden-state return value and yielding only the last
     timestep's output: (N, seq_len, in) → (N, hidden_size).
-  - _Unsqueeze is auto-inserted before each RNN layer to handle tabular input:
-    (N, features) → (N, 1, features).  This is a 1-step sequence, which is
-    architecturally valid but pedagogically degenerate.  Meaningful RNN use
-    requires sequential datasets (future phase).
+  - Sequential datasets (config["seq_len"] set) deliver (N, seq_len, features)
+    directly; the first layer must then be the RNN that consumes it.
+  - _Unsqueeze is auto-inserted before every other RNN layer to handle flat
+    input: (N, features) → (N, 1, features).  This covers tabular datasets and
+    RNNs stacked after the first one (whose input is the previous RNN's last
+    hidden state).  A 1-step sequence is architecturally valid but
+    pedagogically degenerate; use num_layers for real stacking.
   - CNN layers (Conv2d, MaxPool2d) cannot be mixed with RNN layers; build_model
     raises ValueError if both are present.
 
@@ -127,10 +130,17 @@ def build_model(config: dict) -> nn.Module:
             "in the current architecture."
         )
 
+    sequential_input = config.get("seq_len") is not None
+    if sequential_input and layers[0].get("type") not in _RNN_TYPES:
+        raise ValueError(
+            "On sequential datasets the first layer must be LSTM or GRU "
+            "(it consumes the (seq_len, features) window). Linear layers can follow it."
+        )
+
     pytorch_layers: list[nn.Module] = []
     prev = config["input_dim"]
 
-    for layer in layers:
+    for idx, layer in enumerate(layers):
         ltype = layer.get("type", "Linear")
 
         if ltype in _RNN_TYPES:
@@ -139,8 +149,10 @@ def build_model(config: dict) -> nn.Module:
             bidirectional = layer.get("bidirectional", False)
             rnn_dropout  = layer.get("rnn_dropout", 0.0)
 
-            # Promote flat input to sequential: (N, prev) → (N, 1, prev)
-            pytorch_layers.append(_Unsqueeze())
+            # Data already (N, seq_len, F) for the first RNN on sequential data;
+            # otherwise promote flat input: (N, prev) → (N, 1, prev)
+            if not (sequential_input and idx == 0):
+                pytorch_layers.append(_Unsqueeze())
 
             if ltype == "LSTM":
                 wrapper = LSTMWrapper(prev, hidden_size, num_layers, bidirectional, rnn_dropout)
@@ -163,6 +175,8 @@ def build_model(config: dict) -> nn.Module:
     if config["task"] == "binary":
         pytorch_layers.append(nn.Linear(prev, 1))
         pytorch_layers.append(nn.Sigmoid())
+    elif config["task"] == "regression":
+        pytorch_layers.append(nn.Linear(prev, 1))
     else:
         pytorch_layers.append(nn.Linear(prev, config["n_classes"]))
 

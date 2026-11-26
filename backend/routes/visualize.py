@@ -2,8 +2,9 @@
 
 POST /api/visualize/confusion_matrix
 POST /api/visualize/decision_boundary
+POST /api/visualize/predictions        (regression only)
 
-Both look up the trained model from session_store and return a base64 PNG.
+All look up the trained model from session_store and return a base64 PNG.
 """
 from __future__ import annotations
 
@@ -40,6 +41,12 @@ async def confusion_matrix(req: VisualizeRequest) -> VisualizeResponse:
     sess = _get_session(req.session_id)
     cfg  = sess["config"]
 
+    if cfg["task"] == "regression":
+        raise HTTPException(
+            status_code=400,
+            detail="Confusion matrix is only available for classification datasets.",
+        )
+
     from components.visualizer import plot_confusion_matrix
     fig = plot_confusion_matrix(
         sess["model"],
@@ -69,4 +76,20 @@ async def decision_boundary(req: VisualizeRequest) -> VisualizeResponse:
         sess["y_test"],
         cfg,
     )
+    return VisualizeResponse(image=_fig_to_base64(fig))
+
+
+@router.post("/predictions", response_model=VisualizeResponse)
+async def predictions(req: VisualizeRequest) -> VisualizeResponse:
+    sess = _get_session(req.session_id)
+    cfg  = sess["config"]
+
+    if cfg["task"] != "regression":
+        raise HTTPException(
+            status_code=400,
+            detail="Prediction plot is only available for regression datasets.",
+        )
+
+    from components.visualizer import plot_predictions
+    fig = plot_predictions(sess["model"], sess["X_test"], sess["y_test"])
     return VisualizeResponse(image=_fig_to_base64(fig))

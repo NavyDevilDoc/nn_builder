@@ -37,14 +37,25 @@ export interface BuilderConfig {
   es_patience: number;
   es_min_delta: number;
   device: "cpu" | "cuda";
+  // Sequential datasets only: window-length override. null => dataset default.
+  seq_len: number | null;
 }
 
+export type Task = "binary" | "multiclass" | "regression";
+
 export interface DatasetInfo {
-  task: "binary" | "multiclass";
-  input_dim: number;
-  n_classes: number;
+  task: Task;
+  input_dim: number;        // features per timestep for sequential datasets
+  n_classes: number;        // 0 for regression
   description: string;
   input_shape: [number, number, number] | null;
+  seq_len: number | null;   // default window length; non-null => sequential
+}
+
+/** Window length actually used for a dataset: user override, else dataset default. */
+export function effectiveSeqLen(meta: DatasetInfo, override: number | null | undefined): number | null {
+  if (meta.seq_len === null) return null;
+  return override ?? meta.seq_len;
 }
 
 export interface DatasetsResponse {
@@ -60,7 +71,7 @@ export interface EpochEvent {
   total: number;
   train_loss: number;
   val_loss: number;
-  train_acc: number;
+  train_acc: number;   // accuracy for classification, R² for regression
   val_acc: number;
 }
 

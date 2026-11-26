@@ -44,16 +44,20 @@ class BuilderConfig(BaseModel):
     es_patience: int = 20
     es_min_delta: float = 0.0
     device: Literal["cpu", "cuda"] = "cpu"
+    # Sequential datasets only: window length override. None => dataset default.
+    # Ignored for non-sequential datasets.
+    seq_len: int | None = Field(default=None, ge=2, le=500)
 
 
 # ── Dataset endpoints ─────────────────────────────────────────────────────────
 
 class DatasetInfo(BaseModel):
-    task: Literal["binary", "multiclass"]
-    input_dim: int
-    n_classes: int
+    task: Literal["binary", "multiclass", "regression"]
+    input_dim: int                          # features per timestep for sequential
+    n_classes: int                          # 0 for regression
     description: str
     input_shape: list[int] | None = None    # [C, H, W] for image datasets
+    seq_len: int | None = None              # default window; non-None => sequential
 
 
 class DatasetsResponse(BaseModel):
@@ -74,6 +78,7 @@ class ValidationRequest(BaseModel):
     task: str
     n_classes: int
     hidden_layers: list[LayerConfig] = Field(default_factory=list)
+    seq_len: int | None = None              # effective window length for sequential datasets
 
 
 class ValidationResponse(BaseModel):

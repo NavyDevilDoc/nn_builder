@@ -5,22 +5,27 @@ import {
 } from "recharts";
 import { ImageIcon, Loader2 } from "lucide-react";
 import { useBuilderStore } from "../store/useBuilderStore";
-import { fetchConfusionMatrix, fetchDecisionBoundary } from "../api/client";
+import { fetchConfusionMatrix, fetchDecisionBoundary, fetchPredictions } from "../api/client";
+import { chartMetric } from "../lib/metrics";
+import type { Task } from "../types/config";
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 
-function buildChartData(history: {
-  train_loss: number[];
-  val_loss:   number[];
-  train_acc:  number[];
-  val_acc:    number[];
-}) {
+function buildChartData(
+  history: {
+    train_loss: number[];
+    val_loss:   number[];
+    train_acc:  number[];
+    val_acc:    number[];
+  },
+  task: Task | null,
+) {
   return history.train_loss.map((_, i) => ({
     epoch:      i + 1,
     train_loss: +history.train_loss[i].toFixed(4),
     val_loss:   +history.val_loss[i].toFixed(4),
-    train_acc:  +(history.train_acc[i] * 100).toFixed(2),
-    val_acc:    +(history.val_acc[i] * 100).toFixed(2),
+    train_acc:  chartMetric(history.train_acc[i], task),
+    val_acc:    chartMetric(history.val_acc[i], task),
   }));
 }
 
@@ -64,6 +69,7 @@ export function ResultsPanel() {
   const getConfig        = useBuilderStore((s) => s.getConfig);
   const setConfusionMatrix  = useBuilderStore((s) => s.setConfusionMatrix);
   const setDecisionBoundary = useBuilderStore((s) => s.setDecisionBoundary);
+  const setPredictions      = useBuilderStore((s) => s.setPredictions);
 
   const [loadingViz, setLoadingViz] = useState(false);
   const [vizError,   setVizError]   = useState<string | null>(null);
@@ -74,13 +80,24 @@ export function ResultsPanel() {
 
   if (!hasHistory) return null;
 
-  const chartData = buildChartData(training.history);
+  const isRegression = training.task === "regression";
+  const chartData = buildChartData(training.history, training.task);
 
   async function handleVisualize() {
     if (!canVisualize) return;
     setLoadingViz(true);
     setVizError(null);
     const config = getConfig();
+    if (isRegression) {
+      try {
+        setPredictions((await fetchPredictions(sessionId!, config)).image);
+      } catch (err) {
+        setVizError(`Predictions: ${(err as Error).message}`);
+      } finally {
+        setLoadingViz(false);
+      }
+      return;
+    }
     try {
       const [cmRes, dbRes] = await Promise.allSettled([
         fetchConfusionMatrix(sessionId!, config),
@@ -119,12 +136,17 @@ export function ResultsPanel() {
         </LineChart>
       </ChartContainer>
 
-      {/* Accuracy curves */}
-      <ChartContainer title="Accuracy (%)">
+      {/* Accuracy / R² curves. R² is unbounded below, so clip the view to
+          [-1, 1] — early epochs would otherwise flatten the useful range. */}
+      <ChartContainer title={isRegression ? "R² (clipped to [-1, 1])" : "Accuracy (%)"}>
         <LineChart data={chartData} {...CHART_PROPS}>
           <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
           <XAxis dataKey="epoch" tick={{ fill: "#71717a", fontSize: 11 }} />
-          <YAxis tick={{ fill: "#71717a", fontSize: 11 }} domain={[0, 100]} />
+          <YAxis
+            tick={{ fill: "#71717a", fontSize: 11 }}
+            domain={isRegression ? [-1, 1] : [0, 100]}
+            allowDataOverflow={isRegression}
+          />
           <Tooltip
             contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6 }}
             labelStyle={{ color: "#a1a1aa" }}
@@ -158,8 +180,11 @@ export function ResultsPanel() {
             <p className="text-xs text-red-400">{vizError}</p>
           )}
 
-          {(results.confusionMatrix || results.decisionBoundary) && (
+          {(results.confusionMatrix || results.decisionBoundary || results.predictions) && (
             <div className="flex flex-wrap gap-6 justify-center">
+              {results.predictions && (
+                <VizImage src={results.predictions} alt="Forecast vs actual (validation)" />
+              )}
               {results.confusionMatrix  && (
                 <VizImage src={results.confusionMatrix}  alt="Confusion matrix" />
               )}

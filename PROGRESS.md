@@ -167,9 +167,21 @@ A full polish pass completed all Phase 5 items (except comparison mode, which wa
 
 Designed a Path A graph mode (Steps 32–38 in `IMPLEMENTATION_PLAN.md`): sequential backend and all existing endpoints stay untouched; a parallel React Flow canvas and `/api/graph/*` endpoints handle non-sequential architectures (ResNet, Inception, U-Net). Key insight: `nn.Sequential` is a special case of a DAG, so the graph backend can handle both — but keeping them separate avoids any risk to the working sequential pipeline.
 
+### Phase 6, Step 25 — Sequential Datasets + Regression (2026-11-25)
+
+All three planned sequential datasets turned out to be next-value forecasting — i.e. **regression** — while the whole pipeline only knew `binary | multiclass`. So Step 25 grew a third task type end-to-end.
+
+**Datasets** (`datasets/sequential.py`, `datasets/registry.py`): `sine` (T=1000, default seq_len 20), `multi_sine` (three incommensurate sines, T=1500, seq_len 40), `airline` (Box–Jenkins 1949–60, T=144, seq_len 12; shipped as `datasets/airline_passengers.csv` — not under `datasets/data/`, which `.gitignore`'s `data/` pattern would swallow). Loaders return raw 1-D series; `registry.load(name, seed, seq_len)` windows them into `(N, seq_len, 1)` → next value, splits **chronologically** 80/20 on target index (shuffled splits leak the future), and standardizes with statistics from the training span only. Airline is log-transformed first (multiplicative seasonality → additive). `DatasetInfo.seq_len` (non-null ⇒ sequential) is the default window; the user can override it per run via `BuilderConfig.seq_len`.
+
+**Regression task** (`components/trainer.py`, `shapes.py`, `code_gen.py`, both Pydantic and TS types): `Linear(→1)` with no activation, `MSELoss`, `y` as float32 `(N, 1)`. History keys are unchanged — `train_acc`/`val_acc` carry **R²** for regression, so SSE/store plumbing stays task-agnostic; the frontend relabels by task (recorded on the training run, not read from the current dropdown). The R² chart is clipped to [-1, 1] because early-epoch R² is unbounded below. New `POST /api/visualize/predictions` plots one-step-ahead forecast vs actual over the validation span; confusion matrix returns 400 for regression. The Streamlit sidebar filters sequential datasets out (no regression path there).
+
+**Input layout is now decided in one place** (`backend/core/inputs.py`): `resolve_input()` / `apply_to_config()` are used by train, validate, *and* code routes. Sequential data + RNN layers → `(N, T, F)` and the first RNN skips `_Unsqueeze`; sequential data + no RNN → windows flattened to `(N, T·F)`, giving a free MLP baseline on the same windows. This also fixed a latent bug: the code route never applied the image-flattening rule, so generated code for a pure-Linear MNIST net didn't match what trained. Current restriction: on sequential data the first layer must be LSTM/GRU (Linear-before-RNN is Step 26 territory).
+
+**Results** (seed 42, Adam lr 0.01, batch 32): sine and multi_sine reach val R² ≈ 0.99 in 30–100 epochs for both LSTM and MLP. Airline is the instructive one — validation years sit above every training value, so the LSTM (saturating tanh) must extrapolate trend: val R² ≈ 0.4 at 100 epochs, 0.65–0.83 at 500–1000, while the ReLU MLP baseline gets ≈ 0.88–0.9. Train R² hits 1.0 on 105 windows — classic small-data overfitting, worth demonstrating.
+
 ### What's next
 
-- **Phase 6, Step 25**: Sequential datasets — sine wave (regression warmup), multi-frequency superposition, and one real-world series. Required to demonstrate LSTM/GRU meaningfully; seq_len=1 is architecturally valid but pedagogically degenerate.
-- **Phase 6, Steps 26–27**: `compute_shapes()` for multi-step sequential shapes; `code_gen.py` for LSTMWrapper/GRUWrapper.
+- **Phase 6, Step 26**: `compute_shapes()` for multi-step sequential shapes — per-timestep Linear before an RNN, `return_sequences`-style stacking.
+- **Phase 6, Step 27**: `code_gen.py` for LSTMWrapper/GRUWrapper (RNN configs still 400 in the code viewer).
 - **Phase 7**: Custom dataset upload (CSV tabular, .npz sequential).
 - **Phase 8**: Graph mode node editor.

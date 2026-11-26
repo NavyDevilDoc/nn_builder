@@ -17,7 +17,7 @@ import { Plus, X } from "lucide-react";
 import { useBuilderStore } from "../../store/useBuilderStore";
 import { fetchDatasets, validateConfig } from "../../api/client";
 import { LayerCard } from "./LayerCard";
-import type { LayerType, ValidationResult } from "../../types/config";
+import { effectiveSeqLen, type LayerType, type ValidationResult } from "../../types/config";
 
 const ADD_TYPES: LayerType[] = ["Linear", "Conv2d", "MaxPool2d", "Flatten", "LSTM", "GRU"];
 
@@ -108,12 +108,13 @@ export function LayerBuilder() {
         meta.task,
         meta.n_classes,
         layers.map(({ id: _id, ...rest }) => rest),
+        effectiveSeqLen(meta, hyperparams.seq_len),
       );
       setValidation(result);
     } catch {
       setValidation(null);
     }
-  }, [layers, hyperparams.dataset, datasetsData]);
+  }, [layers, hyperparams.dataset, hyperparams.seq_len, datasetsData]);
 
   useEffect(() => { runValidation(); }, [runValidation]);
 

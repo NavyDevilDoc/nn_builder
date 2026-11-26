@@ -40,7 +40,8 @@ export async function validateConfig(
   inputDim: number,
   task: string,
   nClasses: number,
-  hiddenLayers: BuilderConfig["hidden_layers"]
+  hiddenLayers: BuilderConfig["hidden_layers"],
+  seqLen: number | null = null,
 ): Promise<ValidationResult> {
   const res = await fetch(`${API}/validate`, {
     method: "POST",
@@ -51,6 +52,7 @@ export async function validateConfig(
       task,
       n_classes: nClasses,
       hidden_layers: hiddenLayers,
+      seq_len: seqLen,
     }),
   });
   if (!res.ok) throw new Error(`validateConfig failed: ${res.statusText}`);
@@ -126,6 +128,19 @@ export async function fetchDecisionBoundary(
     body: JSON.stringify({ session_id: sessionId, config }),
   });
   if (!res.ok) throw new Error(`fetchDecisionBoundary failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchPredictions(
+  sessionId: string,
+  config: BuilderConfig
+): Promise<VisualizeResponse> {
+  const res = await fetch(`${API}/visualize/predictions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, config }),
+  });
+  if (!res.ok) throw new Error(`fetchPredictions failed: ${res.statusText}`);
   return res.json();
 }
 

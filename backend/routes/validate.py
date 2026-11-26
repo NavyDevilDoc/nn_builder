@@ -8,13 +8,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from backend.core.inputs import resolve_input
 from backend.core.shapes import compute_shapes
 from backend.models import ValidationRequest, ValidationResponse
 
 router = APIRouter(prefix="/api", tags=["validate"])
-
-
-_CNN_TYPES = frozenset({"Conv2d", "MaxPool2d", "Flatten"})
 
 
 @router.post("/validate", response_model=ValidationResponse)
@@ -22,15 +20,14 @@ async def validate(req: ValidationRequest) -> ValidationResponse:
     layers = [layer.model_dump(exclude_none=False) for layer in req.hidden_layers]
     layer_types = {l.get("type", "Linear") for l in layers}
 
-    # Mirror train.py: a pure-Linear/RNN network on an image dataset is treated
-    # as flat tabular — input_shape only matters when CNN layers are present.
-    effective_input_shape = (
-        req.input_shape if (req.input_shape and layer_types & _CNN_TYPES) else None
-    )
+    # Same input-layout decision as train.py (image vs flat, sequence vs
+    # flattened window) so shape annotations match what training will build.
+    eff = resolve_input(req.input_dim, req.input_shape, req.seq_len, layer_types)
 
     config = {
-        "input_shape": effective_input_shape,
-        "input_dim":   req.input_dim,
+        "input_shape": eff.input_shape,
+        "input_dim":   eff.input_dim,
+        "seq_len":     eff.seq_len,
         "task":        req.task,
         "n_classes":   req.n_classes,
         "hidden_layers": layers,

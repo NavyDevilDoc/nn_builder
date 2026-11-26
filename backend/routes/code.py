@@ -13,6 +13,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 
 import datasets.registry as registry
+from backend.core.inputs import apply_to_config
 from backend.models import CodeResponse
 from components.code_gen import generate_code
 
@@ -31,10 +32,7 @@ async def get_code(config: str = Query(..., description="JSON-encoded BuilderCon
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    cfg["task"]        = info.task
-    cfg["n_classes"]   = info.n_classes
-    cfg["input_dim"]   = info.input_dim
-    cfg["input_shape"] = list(info.input_shape) if info.input_shape else None
+    apply_to_config(cfg, info)
 
     # hidden_layers may arrive as list of dicts (from JSON) — that's what generate_code expects
     try:

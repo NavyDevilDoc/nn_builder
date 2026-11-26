@@ -3,12 +3,15 @@
 Contracts (must stay in sync with components/code_gen.py):
   - Binary      : Sigmoid output, BCELoss, y cast to float32 shape (N, 1)
   - Multiclass  : raw logit output, CrossEntropyLoss, y cast to long shape (N,)
+  - Regression  : Linear(->1) output (no activation), MSELoss, y float32 (N, 1)
   - Momentum    : SGD with momentum=0.9
   - Mini-batch  : DataLoader over TensorDataset; epoch metrics on full tensors
   - Image input : flat (N, D) arrays reshaped to (N, C, H, W) via input_shape
   - on_epoch    : optional callback(epoch_idx, metrics_dict) called each epoch
   - stop_event  : optional threading.Event; training breaks at next epoch start
   - history keys: train_loss, val_loss, train_acc, val_acc (one value per epoch)
+                  For regression, *_acc holds R^2 (1 - SSE/SST) rather than
+                  accuracy - same keys so the SSE/history plumbing is task-agnostic.
 """
 from __future__ import annotations
 
@@ -94,10 +97,19 @@ def build_model(config: dict) -> nn.Module:
     if config["task"] == "binary":
         pytorch_layers.append(nn.Linear(final_units, 1))
         pytorch_layers.append(nn.Sigmoid())
+    elif config["task"] == "regression":
+        pytorch_layers.append(nn.Linear(final_units, 1))
     else:
         pytorch_layers.append(nn.Linear(final_units, config["n_classes"]))
 
     return nn.Sequential(*pytorch_layers)
+
+
+def _r2(pred: torch.Tensor, target: torch.Tensor) -> float:
+    """Coefficient of determination, 1 - SSE/SST.  Can be negative."""
+    sse = ((target - pred) ** 2).sum()
+    sst = ((target - target.mean()) ** 2).sum()
+    return (1.0 - sse / sst).item() if sst > 0 else 0.0
 
 
 def train_model(
@@ -128,6 +140,8 @@ def train_model(
     # Criterion
     if config["task"] == "binary":
         criterion = nn.BCELoss()
+    elif config["task"] == "regression":
+        criterion = nn.MSELoss()
     else:
         criterion = nn.CrossEntropyLoss()
 
@@ -144,7 +158,7 @@ def train_model(
     # Tensors — dtype and shape must match code_gen.py
     X_tr = torch.tensor(X_train, dtype=torch.float32).to(device)
     X_v  = torch.tensor(X_val,   dtype=torch.float32).to(device)
-    if config["task"] == "binary":
+    if config["task"] in ("binary", "regression"):
         y_tr = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1).to(device)
         y_v  = torch.tensor(y_val,   dtype=torch.float32).unsqueeze(1).to(device)
     else:
@@ -207,6 +221,9 @@ def train_model(
             if config["task"] == "binary":
                 train_acc = ((train_out > 0.5).float() == y_tr).float().mean().item()
                 val_acc   = ((val_out   > 0.5).float() == y_v ).float().mean().item()
+            elif config["task"] == "regression":
+                train_acc = _r2(train_out, y_tr)
+                val_acc   = _r2(val_out,   y_v)
             else:
                 train_acc = (train_out.argmax(1) == y_tr).float().mean().item()
                 val_acc   = (val_out.argmax(1)   == y_v ).float().mean().item()
